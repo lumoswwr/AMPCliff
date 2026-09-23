@@ -84,3 +84,7 @@ AGENTS.md
 test_bnn*.jpg
 ESMT12_VALIDATION_PLAN.md
 RE_TRAIN_README.md
+
+# ===== Local experiment backups =====
+*.before_*
+*.before-*

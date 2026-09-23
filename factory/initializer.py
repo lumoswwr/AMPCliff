@@ -1,8 +1,13 @@
 # maintained by kewei li
 from transformers import AutoModel,AutoTokenizer,AutoConfig,BertConfig, BertModel, BertTokenizer
 from tokenizers import Tokenizer
-from ..progen2.models.progen.modeling_progen import ProGenModel,ProGenForCausalLM
-from ..progen2.models.progen.configuration_progen import ProGenConfig
+try:
+    from ..progen2.models.progen.modeling_progen import ProGenModel, ProGenForCausalLM
+    from ..progen2.models.progen.configuration_progen import ProGenConfig
+except ModuleNotFoundError:
+    ProGenModel = None
+    ProGenForCausalLM = None
+    ProGenConfig = None
 from ..utils.utils import get_device,fix_random_seed, load_weights, load_model
 from ..utils.std_logger import Logger
 from .regression import *  # RegModel_v1, RegModel_v2, RegModel_MLTP
@@ -69,10 +74,12 @@ class ModelInitializer():
                     'esm2_t33': '/data/public/models/facebook/esm2_t33_650M_UR50D/',
                     'esm2_t48': '/data/public/models/facebook/esm2_t48_15B_UR50D/',
                 }
-                if version in config_dir_mapping:
+                if self.cfg.model.config_dir:
+                    config_dir = self.cfg.model.config_dir
+                elif version in config_dir_mapping:
                     config_dir = config_dir_mapping[version]
                 else:
-                    config_dir = self.cfg.model.config_dir
+                    raise ValueError(f"No config_dir available for ESM2 version: {version}")
                 Logger.info(f"Loading ESM2 model: version={version}, path={config_dir}")
 
                 config = AutoConfig.from_pretrained(config_dir)
