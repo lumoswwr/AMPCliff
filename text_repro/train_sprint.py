@@ -152,17 +152,20 @@ class SprintEncoder(nn.Module):
             self.pool = MeanPooling()
 
         elif pooling == "FLaG":
+            # Published FLaG core settings used across the main experiments:
+            # 8 latent queries, 4 heads, dropout=0.1, residual gating,
+            # masked max pooling. Keep the original post-pool behavior.
             self.pool = FFTLatentAttentionGatePooling(
                 d_model=d_model,
                 num_latents=8,
                 num_heads=4,
-                dropout=0.0,
+                dropout=0.1,
                 time_pool="max",
                 gate_residual=True,
                 eps=1e-6,
                 use_gate=True,
                 use_latent=True,
-                post_pool_norm=True,
+                post_pool_norm=False,
                 window_type=None,
                 fixed_fft_length=None,
             )
@@ -504,6 +507,15 @@ def train(args):
     print("- checkpoint criterion: validation accuracy")
     print("- official test evaluated only after checkpoint selection")
 
+    if args.pooling == "FLaG":
+        print("\nPublished FLaG core settings:")
+        print("- num_latents: 8")
+        print("- num_heads: 4")
+        print("- dropout: 0.1")
+        print("- time_pool: max")
+        print("- residual gate: True")
+        print("- post_pool_norm: False")
+
     if args.pooling == "STFT_FLaG":
         print("\nFrozen E12:")
         print("- win_length:", args.stft_win_length)
@@ -747,6 +759,14 @@ def train(args):
             "decision_threshold": "logit >= 0",
             "checkpoint_tie_break": "keep earliest epoch",
         },
+        "published_flag_core_settings": {
+            "num_latents": 8,
+            "num_heads": 4,
+            "dropout": 0.1,
+            "time_pool": "max",
+            "gate_residual": True,
+            "post_pool_norm": False,
+        },
         "stft_frozen_e12": {
             "win_length": 16,
             "hop_length": 16,
@@ -755,6 +775,8 @@ def train(args):
             "frame_positional_encoding": False,
             "num_latents": 8,
             "num_heads": 4,
+            "dropout": 0.0,
+            "post_pool_norm": True,
         },
     }
 
