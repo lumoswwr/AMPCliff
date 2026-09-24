@@ -393,7 +393,7 @@ def classification_metrics(logits, labels, cosines=None):
                 zero_division=0,
             )
         ),
-        # Diagnostics only; not used for checkpoint selection.
+        # Fixed-zero-threshold diagnostics only.
         "precision": float(
             precision_score(
                 labels,
@@ -423,6 +423,223 @@ def classification_metrics(logits, labels, cosines=None):
             )
             if cosines is not None
             else None
+        ),
+    }
+
+
+def best_accuracy_threshold(scores, labels):
+    scores = np.asarray(
+        scores,
+        dtype=np.float64,
+    )
+    labels = np.asarray(
+        labels,
+        dtype=np.int64,
+    )
+
+    order = np.argsort(scores)
+    sorted_scores = scores[order]
+    sorted_labels = labels[order]
+
+    # Threshold above max score predicts every pair as negative.
+    correct = int(
+        (labels == 0).sum()
+    )
+    best_acc = (
+        correct / len(labels)
+    )
+    best_threshold = np.nextafter(
+        sorted_scores[-1],
+        np.inf,
+    )
+
+    for i in range(
+        len(sorted_scores) - 1,
+        -1,
+        -1,
+    ):
+        if sorted_labels[i] == 1:
+            correct += 1
+        else:
+            correct -= 1
+
+        if (
+            i == 0
+            or sorted_scores[i - 1]
+            < sorted_scores[i]
+        ):
+            acc = (
+                correct / len(labels)
+            )
+
+            if acc > best_acc:
+                best_acc = acc
+
+                if i == 0:
+                    best_threshold = np.nextafter(
+                        sorted_scores[0],
+                        -np.inf,
+                    )
+                else:
+                    best_threshold = (
+                        sorted_scores[i - 1]
+                        + sorted_scores[i]
+                    ) / 2.0
+
+    return (
+        float(best_acc),
+        float(best_threshold),
+    )
+
+
+def best_f1_threshold(scores, labels):
+    scores = np.asarray(
+        scores,
+        dtype=np.float64,
+    )
+    labels = np.asarray(
+        labels,
+        dtype=np.int64,
+    )
+
+    order = np.argsort(
+        -scores
+    )
+    sorted_scores = scores[order]
+    sorted_labels = labels[order]
+
+    tp = 0
+    fp = 0
+    total_pos = int(
+        labels.sum()
+    )
+
+    best = {
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "threshold": float(
+            np.nextafter(
+                sorted_scores[0],
+                np.inf,
+            )
+        ),
+    }
+
+    i = 0
+    n = len(sorted_scores)
+
+    while i < n:
+        score = sorted_scores[i]
+        j = i
+
+        while (
+            j < n
+            and sorted_scores[j] == score
+        ):
+            if sorted_labels[j] == 1:
+                tp += 1
+            else:
+                fp += 1
+
+            j += 1
+
+        precision = (
+            tp / (tp + fp)
+            if (tp + fp)
+            else 0.0
+        )
+
+        recall = (
+            tp / total_pos
+            if total_pos
+            else 0.0
+        )
+
+        f1 = (
+            2.0
+            * precision
+            * recall
+            / (precision + recall)
+            if (precision + recall)
+            else 0.0
+        )
+
+        if f1 > best["f1"]:
+            if j < n:
+                threshold = (
+                    score
+                    + sorted_scores[j]
+                ) / 2.0
+            else:
+                threshold = np.nextafter(
+                    score,
+                    -np.inf,
+                )
+
+            best = {
+                "f1": float(f1),
+                "precision": float(precision),
+                "recall": float(recall),
+                "threshold": float(threshold),
+            }
+
+        i = j
+
+    return best
+
+
+def threshold_metrics(
+    scores,
+    labels,
+    threshold,
+):
+    scores = np.asarray(
+        scores,
+        dtype=np.float64,
+    )
+    labels = np.asarray(
+        labels,
+        dtype=np.int64,
+    )
+
+    preds = (
+        scores >= threshold
+    ).astype(np.int64)
+
+    return {
+        "accuracy": float(
+            accuracy_score(
+                labels,
+                preds,
+            )
+        ),
+        "f1": float(
+            f1_score(
+                labels,
+                preds,
+                zero_division=0,
+            )
+        ),
+        "precision": float(
+            precision_score(
+                labels,
+                preds,
+                zero_division=0,
+            )
+        ),
+        "recall": float(
+            recall_score(
+                labels,
+                preds,
+                zero_division=0,
+            )
+        ),
+        "predicted_positive_rate": float(
+            preds.mean()
+        ),
+        "predicted_positive_count": int(
+            preds.sum()
         ),
     }
 
@@ -756,7 +973,11 @@ def train(args):
             "batch_size": args.batch_size,
             "eval_batch_size": args.eval_batch_size,
             "frozen_backbone_mode": "eval + no_grad",
-            "decision_threshold": "logit >= 0",
+            "decision_threshold": (
+                "validation-calibrated; best validation accuracy threshold "
+                "for Accuracy and checkpoint selection, best validation F1 "
+                "threshold for F1/precision/recall; thresholds then frozen"
+            ),
             "checkpoint_tie_break": "keep earliest epoch",
         },
         "published_flag_core_settings": {
@@ -872,8 +1093,8 @@ def train(args):
 
         (
             val_metrics,
-            _,
-            _,
+            val_logits,
+            val_labels,
             _,
         ) = evaluate(
             model,
@@ -881,13 +1102,50 @@ def train(args):
             device,
         )
 
+        (
+            val_best_acc,
+            val_acc_threshold,
+        ) = best_accuracy_threshold(
+            val_logits,
+            val_labels,
+        )
+
+        val_best_f1 = best_f1_threshold(
+            val_logits,
+            val_labels,
+        )
+
+        val_acc_threshold_metrics = threshold_metrics(
+            val_logits,
+            val_labels,
+            val_acc_threshold,
+        )
+
+        val_f1_threshold_metrics = threshold_metrics(
+            val_logits,
+            val_labels,
+            val_best_f1["threshold"],
+        )
+
         row = {
             "epoch": epoch,
             "train_loss": train_loss,
             **{
-                f"val_{k}": v
+                f"val_default_{k}": v
                 for k, v in val_metrics.items()
             },
+            "val_best_accuracy": val_best_acc,
+            "val_accuracy_threshold": val_acc_threshold,
+            "val_best_f1": val_best_f1["f1"],
+            "val_f1_threshold": val_best_f1["threshold"],
+            "val_f1_threshold_precision":
+                val_f1_threshold_metrics["precision"],
+            "val_f1_threshold_recall":
+                val_f1_threshold_metrics["recall"],
+            "val_f1_threshold_predicted_positive_rate":
+                val_f1_threshold_metrics[
+                    "predicted_positive_rate"
+                ],
         }
 
         history.append(
@@ -897,24 +1155,26 @@ def train(args):
         print(
             f"\nEpoch {epoch}: "
             f"loss={train_loss:.6f} | "
-            f"val Acc={val_metrics['accuracy']:.6f} | "
+            f"val bestAcc={val_best_acc:.6f} | "
             f"val AP={val_metrics['average_precision']:.6f} | "
-            f"val F1={val_metrics['f1']:.6f} | "
+            f"val bestF1={val_best_f1['f1']:.6f} | "
             f"cosAP={val_metrics['cosine_average_precision']:.6f} | "
-            f"pred+={val_metrics['predicted_positive_rate']:.6f} | "
+            f"accThr={val_acc_threshold:.6f} | "
+            f"f1Thr={val_best_f1['threshold']:.6f} | "
+            f"F1pred+={val_f1_threshold_metrics['predicted_positive_rate']:.6f} | "
             f"scale={float(model.head.positive_scale().detach().cpu()):.6f} | "
             f"bias={float(model.head.bias.detach().cpu()):.6f}\n"
         )
 
-        # Strictly greater keeps the earliest checkpoint on ties.
-        # No secondary metric is used because the paper specifies
-        # validation accuracy as the selection criterion.
+        # Checkpoint selection follows validation accuracy after calibrating
+        # the threshold on validation. Strictly greater keeps the earliest
+        # checkpoint on ties. No test labels are used.
         if (
-            val_metrics["accuracy"]
+            val_best_acc
             > best_val_accuracy
         ):
             best_val_accuracy = (
-                val_metrics["accuracy"]
+                val_best_acc
             )
 
             best_epoch = epoch
@@ -927,6 +1187,12 @@ def train(args):
                         epoch,
                     "val_accuracy":
                         best_val_accuracy,
+                    "val_accuracy_threshold":
+                        val_acc_threshold,
+                    "val_f1_threshold":
+                        val_best_f1["threshold"],
+                    "val_best_f1":
+                        val_best_f1["f1"],
                 },
                 best_path,
             )
@@ -949,8 +1215,8 @@ def train(args):
 
     (
         val_metrics,
-        _,
-        _,
+        val_logits,
+        val_labels,
         _,
     ) = evaluate(
         model,
@@ -958,10 +1224,31 @@ def train(args):
         device,
     )
 
+    val_accuracy_threshold = checkpoint[
+        "val_accuracy_threshold"
+    ]
+    val_f1_threshold = checkpoint[
+        "val_f1_threshold"
+    ]
+
+    final_val_acc_calibrated = threshold_metrics(
+        val_logits,
+        val_labels,
+        val_accuracy_threshold,
+    )
+
+    final_val_f1_calibrated = threshold_metrics(
+        val_logits,
+        val_labels,
+        val_f1_threshold,
+    )
+
     test_metrics = None
     test_logits = None
     test_labels = None
     test_cosines = None
+    test_acc_calibrated = None
+    test_f1_calibrated = None
 
     if not args.skip_test:
         (
@@ -975,6 +1262,18 @@ def train(args):
             device,
         )
 
+        test_acc_calibrated = threshold_metrics(
+            test_logits,
+            test_labels,
+            val_accuracy_threshold,
+        )
+
+        test_f1_calibrated = threshold_metrics(
+            test_logits,
+            test_labels,
+            val_f1_threshold,
+        )
+
     result = {
         "experiment": (
             args.experiment_name
@@ -985,14 +1284,42 @@ def train(args):
         "pooling": args.pooling,
         "best_epoch": best_epoch,
         "best_val_accuracy": best_val_accuracy,
-        **{
-            f"final_val_{k}": v
-            for k, v in val_metrics.items()
-        },
+        "val_accuracy_threshold": val_accuracy_threshold,
+        "val_f1_threshold": val_f1_threshold,
+        "final_val_average_precision":
+            val_metrics["average_precision"],
+        "final_val_cosine_average_precision":
+            val_metrics["cosine_average_precision"],
+        "final_val_accuracy":
+            final_val_acc_calibrated["accuracy"],
+        "final_val_f1":
+            final_val_f1_calibrated["f1"],
+        "final_val_precision":
+            final_val_f1_calibrated["precision"],
+        "final_val_recall":
+            final_val_f1_calibrated["recall"],
+        "final_val_predicted_positive_rate":
+            final_val_f1_calibrated[
+                "predicted_positive_rate"
+            ],
         **(
             {
-                f"test_{k}": v
-                for k, v in test_metrics.items()
+                "test_average_precision":
+                    test_metrics["average_precision"],
+                "test_cosine_average_precision":
+                    test_metrics["cosine_average_precision"],
+                "test_accuracy":
+                    test_acc_calibrated["accuracy"],
+                "test_f1":
+                    test_f1_calibrated["f1"],
+                "test_precision":
+                    test_f1_calibrated["precision"],
+                "test_recall":
+                    test_f1_calibrated["recall"],
+                "test_predicted_positive_rate":
+                    test_f1_calibrated[
+                        "predicted_positive_rate"
+                    ],
             }
             if test_metrics is not None
             else {}
