@@ -235,19 +235,50 @@ class SprintEncoder(nn.Module):
 
 class CosineLogitHead(nn.Module):
     """
-    Lightweight affine scorer over pairwise cosine similarity.
+    Monotone cosine-logit scorer.
 
-    The supplement specifies a "cosine-logit scorer" but the public release
-    does not include the Sprint implementation. We therefore use the minimal
-    literal implementation: one learnable affine map from cosine -> logit.
+    Duplicate pairs must never receive lower logits merely because a free
+    affine weight changes sign. The public supplement names a cosine-logit
+    scorer but does not release the Sprint implementation, so we use the
+    minimal monotone parameterization
+
+        logit = positive_scale * cosine + bias
+
+    where positive_scale = softplus(raw_scale).
+
+    This preserves cosine ordering while still allowing BCE training to learn
+    calibration. The exact scorer parameterization is therefore recorded as a
+    reproduction choice rather than an author-reported implementation detail.
     """
 
-    def __init__(self):
+    def __init__(self, scale_init=1.0, bias_init=0.0):
         super().__init__()
 
-        self.linear = nn.Linear(
-            1,
-            1,
+        if scale_init <= 0:
+            raise ValueError("scale_init must be positive.")
+
+        # Inverse softplus so softplus(raw_scale) starts at scale_init.
+        raw_scale_init = np.log(
+            np.expm1(scale_init)
+        )
+
+        self.raw_scale = nn.Parameter(
+            torch.tensor(
+                float(raw_scale_init),
+                dtype=torch.float32,
+            )
+        )
+
+        self.bias = nn.Parameter(
+            torch.tensor(
+                float(bias_init),
+                dtype=torch.float32,
+            )
+        )
+
+    def positive_scale(self):
+        return F.softplus(
+            self.raw_scale
         )
 
     def forward(self, z1, z2):
@@ -257,9 +288,11 @@ class CosineLogitHead(nn.Module):
             dim=-1,
         )
 
-        logits = self.linear(
-            cosine.unsqueeze(-1)
-        ).squeeze(-1)
+        logits = (
+            self.positive_scale()
+            * cosine
+            + self.bias
+        )
 
         return logits, cosine
 
@@ -311,7 +344,7 @@ class SprintPairClassifier(nn.Module):
 # Metrics
 # ---------------------------------------------------------
 
-def classification_metrics(logits, labels):
+def classification_metrics(logits, labels, cosines=None):
     logits = np.asarray(
         logits,
         dtype=np.float64,
@@ -375,6 +408,19 @@ def classification_metrics(logits, labels):
         "predicted_positive_rate": float(
             preds.mean()
         ),
+        "cosine_average_precision": (
+            float(
+                average_precision_score(
+                    labels,
+                    np.asarray(
+                        cosines,
+                        dtype=np.float64,
+                    ),
+                )
+            )
+            if cosines is not None
+            else None
+        ),
     }
 
 
@@ -421,6 +467,7 @@ def evaluate(model, loader, device):
     metrics = classification_metrics(
         all_logits,
         all_labels,
+        cosines=all_cosines,
     )
 
     return (
@@ -452,7 +499,7 @@ def train(args):
 
     print("\nSprint protocol:")
     print("- frozen RoBERTa-base")
-    print("- train pooling + cosine-logit head")
+    print("- train pooling + monotone cosine-logit head")
     print("- BCEWithLogitsLoss")
     print("- checkpoint criterion: validation accuracy")
     print("- official test evaluated only after checkpoint selection")
@@ -605,6 +652,22 @@ def train(args):
     print("backbone trainable:", backbone_trainable)
     print("pool trainable:", pool_trainable)
     print("head trainable:", head_trainable)
+    print(
+        "head positive scale:",
+        float(
+            model.head.positive_scale()
+            .detach()
+            .cpu()
+        ),
+    )
+    print(
+        "head bias:",
+        float(
+            model.head.bias
+            .detach()
+            .cpu()
+        ),
+    )
 
     if backbone_trainable != 0:
         raise RuntimeError(
@@ -671,7 +734,10 @@ def train(args):
                 "fixed stratified 90/10 split of official validation; "
                 "random_state=42; shared across model seeds"
             ),
-            "cosine_logit_head": "nn.Linear(1, 1) over cosine similarity",
+            "cosine_logit_head": (
+                "monotone affine cosine scorer: "
+                "softplus(raw_scale) * cosine + bias; scale_init=1.0"
+            ),
             "optimizer": "AdamW",
             "weight_decay": args.weight_decay,
             "scheduler": "none",
@@ -812,7 +878,10 @@ def train(args):
             f"val Acc={val_metrics['accuracy']:.6f} | "
             f"val AP={val_metrics['average_precision']:.6f} | "
             f"val F1={val_metrics['f1']:.6f} | "
-            f"pred+={val_metrics['predicted_positive_rate']:.6f}\n"
+            f"cosAP={val_metrics['cosine_average_precision']:.6f} | "
+            f"pred+={val_metrics['predicted_positive_rate']:.6f} | "
+            f"scale={float(model.head.positive_scale().detach().cpu()):.6f} | "
+            f"bias={float(model.head.bias.detach().cpu()):.6f}\n"
         )
 
         # Strictly greater keeps the earliest checkpoint on ties.
@@ -867,16 +936,22 @@ def train(args):
         device,
     )
 
-    (
-        test_metrics,
-        test_logits,
-        test_labels,
-        test_cosines,
-    ) = evaluate(
-        model,
-        test_loader,
-        device,
-    )
+    test_metrics = None
+    test_logits = None
+    test_labels = None
+    test_cosines = None
+
+    if not args.skip_test:
+        (
+            test_metrics,
+            test_logits,
+            test_labels,
+            test_cosines,
+        ) = evaluate(
+            model,
+            test_loader,
+            device,
+        )
 
     result = {
         "experiment": (
@@ -892,10 +967,14 @@ def train(args):
             f"final_val_{k}": v
             for k, v in val_metrics.items()
         },
-        **{
-            f"test_{k}": v
-            for k, v in test_metrics.items()
-        },
+        **(
+            {
+                f"test_{k}": v
+                for k, v in test_metrics.items()
+            }
+            if test_metrics is not None
+            else {}
+        ),
     }
 
     print("\n================================")
@@ -917,40 +996,41 @@ def train(args):
             indent=2,
         )
 
-    probs = 1.0 / (
-        1.0 + np.exp(
-            -np.clip(
-                np.asarray(
-                    test_logits,
-                    dtype=np.float64,
-                ),
-                -50.0,
-                50.0,
+    if not args.skip_test:
+        probs = 1.0 / (
+            1.0 + np.exp(
+                -np.clip(
+                    np.asarray(
+                        test_logits,
+                        dtype=np.float64,
+                    ),
+                    -50.0,
+                    50.0,
+                )
             )
         )
-    )
 
-    preds = (
-        np.asarray(
-            test_logits
+        preds = (
+            np.asarray(
+                test_logits
+            )
+            >= 0.0
+        ).astype(np.int64)
+
+        pd.DataFrame({
+            "logit": test_logits,
+            "probability": probs,
+            "prediction": preds,
+            "true": np.asarray(
+                test_labels,
+                dtype=np.int64,
+            ),
+            "cosine": test_cosines,
+        }).to_csv(
+            run_dir
+            / "test_predictions.csv",
+            index=False,
         )
-        >= 0.0
-    ).astype(np.int64)
-
-    pd.DataFrame({
-        "logit": test_logits,
-        "probability": probs,
-        "prediction": preds,
-        "true": np.asarray(
-            test_labels,
-            dtype=np.int64,
-        ),
-        "cosine": test_cosines,
-    }).to_csv(
-        run_dir
-        / "test_predictions.csv",
-        index=False,
-    )
 
     pd.DataFrame(
         history
@@ -1080,6 +1160,15 @@ def main():
         "--limit_test",
         type=int,
         default=None,
+    )
+
+    parser.add_argument(
+        "--skip_test",
+        action="store_true",
+        help=(
+            "Do not evaluate the official test split. "
+            "Use during protocol debugging and model selection."
+        ),
     )
 
     # Frozen E12 values. These remain CLI-visible for config logging
