@@ -778,6 +778,99 @@ Task dependence remains important:
 - E12 improves over FLaG on both tested text tasks, but the magnitude of the
   improvement is much larger on Sprint.
 
+## Sprint global/local gate x reconstruction 2x2 decomposition
+
+A second cross-task mechanism probe repeated the same global/local factorial
+decomposition on SprintDuplicateQuestions validation pairs for seeds 0-2.
+
+For every source checkpoint, exact replay checks passed:
+
+    manual GG == native global
+    manual LL == native local
+    source model == source operator
+
+The probe also exactly reproduced the source validation AP from the training
+metrics (absolute differences 0 to approximately 1e-16).
+
+Across all six source/seed combinations, the global and local frequency
+representations produced numerically identical sample-level gates:
+
+    mean gate MAE approximately 0
+    mean gate cosine approximately 1
+
+Therefore:
+
+    LG == GG
+    LL == GL
+
+to numerical precision.
+
+Prediction-level mean absolute effects:
+
+FLaG-trained weights:
+
+    gate observation |LG-GG|:
+    approximately 0
+
+    local reconstruction |GL-GG|:
+    0.032432 ± 0.003114
+
+E12-trained weights:
+
+    gate observation |LG-GG|:
+    approximately 0
+
+    local reconstruction |GL-GG|:
+    0.037477 ± 0.003556
+
+In all six runs:
+
+    corr(GL-GG, LL-GG) = 1.0
+
+while the gate-observation effect was exactly zero or numerically negligible.
+
+Thus the STSB architectural finding generalizes strongly to Sprint:
+
+    global/local representation differences are reconstruction-dominated,
+    not caused by different learned sample-level gates.
+
+However the AP counterfactuals do NOT show that local reconstruction itself is
+beneficial at inference.
+
+FLaG-trained operator effect:
+
+    LL - GG AP
+    -0.002190 ± 0.004848
+
+E12-trained operator effect:
+
+    LL - GG AP
+    -0.008394 ± 0.008668
+
+For the E12-trained checkpoints, switching from the native local operator to
+the counterfactual global operator increased validation AP in all three tested
+seeds.
+
+A training-regime x inference-operator decomposition on the same AP values gives:
+
+    E12-training effect under global operator:
+    +0.034407 ± 0.015625
+
+    E12-training effect under local operator:
+    +0.028203 ± 0.013289
+
+    training x operator interaction:
+    -0.006205 ± 0.005910
+
+This strengthens the interpretation that the cross-task E12 gain is associated
+with parameters learned under the local-operator training regime, rather than
+a simple inference-time benefit of local reconstruction itself.
+
+Do not interpret the reconstruction-dominance result as proof that local
+reconstruction causally improves performance. It identifies where the
+architectural representation difference enters the forward pass, while the
+performance gain appears to depend importantly on training adaptation.
+
 ---
 
 # 18. Important caveats
