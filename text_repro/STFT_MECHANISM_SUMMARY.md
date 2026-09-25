@@ -863,13 +863,25 @@ A training-regime x inference-operator decomposition on the same AP values gives
     -0.006205 ± 0.005910
 
 This strengthens the interpretation that the cross-task E12 gain is associated
-with parameters learned under the local-operator training regime, rather than
-a simple inference-time benefit of local reconstruction itself.
+with the E12 training regime rather than a simple inference-time benefit of
+local reconstruction itself.
+
+Important confound:
+
+The published Sprint FLaG baseline and frozen E12 do not use identical
+non-operator settings:
+
+    FLaG: dropout=0.1, post_pool_norm=False
+    E12:  dropout=0.0, post_pool_norm=True
+
+Therefore the training-regime effect above cannot yet be attributed purely to
+training with the local reconstruction operator. A matched global control with
+E12's non-operator settings is required for that causal isolation.
 
 Do not interpret the reconstruction-dominance result as proof that local
 reconstruction causally improves performance. It identifies where the
 architectural representation difference enters the forward pass, while the
-performance gain appears to depend importantly on training adaptation.
+performance gain appears to depend importantly on the broader training regime.
 
 ---
 
