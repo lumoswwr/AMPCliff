@@ -656,32 +656,127 @@ Reasons:
 
 ---
 
-# 17. Next planned experiment
+# 17. SprintDuplicateQuestions cross-task validation
 
-Do NOT continue sweeping STFT hyperparameters on STSB.
+The frozen E12 configuration was evaluated on SprintDuplicateQuestions without
+retuning win/hop or other E12 architectural settings.
 
-The next step is cross-task validation of the frozen E12 configuration.
+Task/protocol:
 
-Preferred next task:
+- official validation split -> fixed stratified 90/10 adaptation train/validation
+- split random_state = 42, shared across all model seeds
+- official test split left unchanged
+- frozen RoBERTa-base backbone
+- max_length = 128
+- 10 training epochs
+- learning rate = 1e-3
+- BCEWithLogitsLoss
+- batch_size = 32
+- validation-calibrated monotone cosine-logit scorer
+- checkpoint selected by best validation Accuracy after threshold calibration
+- test Accuracy uses the validation-selected Accuracy threshold
+- test F1/precision/recall use the validation-selected F1 threshold
+- test AP is threshold-free
 
-    SprintDuplicateQuestions
+Important reproducibility note:
 
-Compare only:
+The public FLaG release does not contain the Sprint training implementation.
+The fixed stratified split, batch size, AdamW choice, and exact monotone
+cosine-logit parameterization are therefore documented reproduction choices,
+not claimed author-reported implementation details.
 
-1. Mean pooling
-2. Original FLaG
-3. Frozen E12 STFT-FLaG
+Published/core FLaG settings used here:
 
-Do not retune win/hop on the new task before evaluating the frozen E12 setting.
+    num_latents = 8
+    num_heads = 4
+    dropout = 0.1
+    residual gate = True
+    time_pool = max
+    post_pool_norm = False
 
-Questions:
+Frozen E12 remained:
 
-1. Does E12 also improve over FLaG on a task where original FLaG was stronger?
-2. Is the local-reconstruction effect task-dependent?
-3. Does E12 preserve FLaG's strengths outside STSB?
+    win_length = 16
+    hop_length = 16
+    rectangular window
+    no centering
+    no overlap
+    no frame positional encoding
+    num_latents = 8
+    num_heads = 4
+    dropout = 0.0
+    masked max pooling
+    post_pool_norm = True
 
-If the frozen E12 configuration shows a useful signal on another task, then
-consider a larger confirmatory seed evaluation.
+Mean pooling was also evaluated as a task baseline.
+
+Three-seed preliminary results already showed a positive E12 signal, so the
+confirmatory comparison was expanded to 10 seeds for FLaG and E12.
+
+10-seed test results:
+
+FLaG:
+
+    AP        0.713121 ± 0.019140
+    Accuracy  0.993857 ± 0.000275
+    F1        0.650671 ± 0.016939
+    Precision 0.745202 ± 0.033959
+    Recall    0.579800 ± 0.037446
+
+Frozen E12:
+
+    AP        0.761344 ± 0.016899
+    Accuracy  0.994485 ± 0.000268
+    F1        0.685348 ± 0.020150
+    Precision 0.814274 ± 0.032556
+    Recall    0.594100 ± 0.041906
+
+Paired E12 - FLaG effects:
+
+Average precision:
+
+    mean delta = +0.048222
+    std delta  =  0.017641
+    10/10 seeds positive
+
+    paired 95% CI approximately:
+    [+0.0356, +0.0608]
+
+Accuracy:
+
+    mean delta = +0.000628
+    std delta  =  0.000432
+    10/10 seeds positive
+
+F1:
+
+    mean delta = +0.034676
+    std delta  =  0.024246
+    8/10 seeds positive
+
+Precision:
+
+    mean delta = +0.069072
+    9/10 seeds positive
+
+Recall:
+
+    mean delta = +0.014300
+    6/10 seeds positive
+
+The strongest cross-task result is therefore the threshold-free AP improvement:
+frozen E12 improves AP over FLaG in all 10 paired seeds.
+
+This supports cross-task robustness of the frozen local-frequency E12 design,
+while not establishing that local reconstruction is the causal source of the
+performance gain.
+
+Task dependence remains important:
+
+- On STSB, Mean pooling remains stronger than FLaG/E12.
+- On SprintDuplicateQuestions, FLaG/E12 are much stronger than Mean.
+- E12 improves over FLaG on both tested text tasks, but the magnitude of the
+  improvement is much larger on Sprint.
 
 ---
 
