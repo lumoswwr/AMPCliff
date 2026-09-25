@@ -934,9 +934,73 @@ Current interpretation:
    comparison between those two frozen configurations, but it cannot be used
    as causal evidence that the STFT/local operator is responsible for the gain.
 
-4. The Sprint gain may be driven substantially by non-operator configuration
-   differences, especially dropout/post-pool normalization, or by interactions
-   among those settings and the operator.
+4. The Sprint gain is substantially affected by non-operator configuration,
+   especially the interaction between dropout and post-pool normalization.
+
+### Sprint global-FLaG dropout x post-pool-norm 2x2
+
+A 2x2 validation-only control was run for seeds 0-2 using only the global FFT
+operator.
+
+Configurations:
+
+    Original:
+    dropout=0.1, post_pool_norm=False
+
+    PostNorm:
+    dropout=0.1, post_pool_norm=True
+
+    NoDropout:
+    dropout=0.0, post_pool_norm=False
+
+    Both / GlobalMatch:
+    dropout=0.0, post_pool_norm=True
+
+Three-seed validation AP:
+
+    Original:
+    0.766287 ± 0.012961
+
+    PostNorm:
+    0.812461 ± 0.026084
+
+    NoDropout:
+    0.798390 ± 0.011007
+
+    Both:
+    0.792527 ± 0.025459
+
+Conditional effects:
+
+    dropout 0.1 -> 0.0 with post_norm=False:
+    +0.032103 ± 0.008460
+
+    dropout 0.1 -> 0.0 with post_norm=True:
+    -0.019934 ± 0.000656
+
+    post_norm False -> True with dropout=0.1:
+    +0.046174 ± 0.025121
+
+    post_norm False -> True with dropout=0.0:
+    -0.005863 ± 0.016923
+
+Interaction:
+
+    -0.052037 ± 0.009012
+
+This is a strong negative interaction pattern.
+
+The best mean configuration among these four three-seed controls is:
+
+    dropout=0.1
+    post_pool_norm=True
+
+Therefore neither "dropout=0 is better" nor "post_norm=True is always better"
+is an adequate interpretation. The effect of each factor depends strongly on
+the other.
+
+The averaged main effects are comparatively less informative because of the
+large interaction.
 
 Do not interpret the reconstruction-dominance result as proof that local
 reconstruction causally improves performance. It identifies where the
