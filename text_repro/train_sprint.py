@@ -170,6 +170,42 @@ class SprintEncoder(nn.Module):
                 fixed_fft_length=None,
             )
 
+        elif pooling == "FLaG_PostNorm":
+            # 2x2 non-operator control:
+            # published FLaG dropout, but enable post-pool norm.
+            self.pool = FFTLatentAttentionGatePooling(
+                d_model=d_model,
+                num_latents=8,
+                num_heads=4,
+                dropout=0.1,
+                time_pool="max",
+                gate_residual=True,
+                eps=1e-6,
+                use_gate=True,
+                use_latent=True,
+                post_pool_norm=True,
+                window_type=None,
+                fixed_fft_length=None,
+            )
+
+        elif pooling == "FLaG_NoDropout":
+            # 2x2 non-operator control:
+            # disable dropout, but keep original post-pool behavior.
+            self.pool = FFTLatentAttentionGatePooling(
+                d_model=d_model,
+                num_latents=8,
+                num_heads=4,
+                dropout=0.0,
+                time_pool="max",
+                gate_residual=True,
+                eps=1e-6,
+                use_gate=True,
+                use_latent=True,
+                post_pool_norm=False,
+                window_type=None,
+                fixed_fft_length=None,
+            )
+
         elif pooling == "FLaG_E12Match":
             # Mechanism control:
             # identical non-operator settings to frozen E12, but use
@@ -752,6 +788,18 @@ def train(args):
         print("- residual gate: True")
         print("- post_pool_norm: False")
 
+    if args.pooling == "FLaG_PostNorm":
+        print("\nGlobal FLaG 2x2 control A:")
+        print("- operator: global FFT")
+        print("- dropout: 0.1")
+        print("- post_pool_norm: True")
+
+    if args.pooling == "FLaG_NoDropout":
+        print("\nGlobal FLaG 2x2 control B:")
+        print("- operator: global FFT")
+        print("- dropout: 0.0")
+        print("- post_pool_norm: False")
+
     if args.pooling == "FLaG_E12Match":
         print("\nMatched global control for E12:")
         print("- operator: global FFT")
@@ -1016,6 +1064,28 @@ def train(args):
             "time_pool": "max",
             "gate_residual": True,
             "post_pool_norm": False,
+        },
+        "global_nonoperator_2x2": {
+            "original": {
+                "name": "FLaG",
+                "dropout": 0.1,
+                "post_pool_norm": False,
+            },
+            "postnorm_only": {
+                "name": "FLaG_PostNorm",
+                "dropout": 0.1,
+                "post_pool_norm": True,
+            },
+            "nodropout_only": {
+                "name": "FLaG_NoDropout",
+                "dropout": 0.0,
+                "post_pool_norm": False,
+            },
+            "both": {
+                "name": "FLaG_E12Match",
+                "dropout": 0.0,
+                "post_pool_norm": True,
+            },
         },
         "matched_global_control": {
             "name": "FLaG_E12Match",
@@ -1450,6 +1520,8 @@ def main():
         choices=[
             "mean",
             "FLaG",
+            "FLaG_PostNorm",
+            "FLaG_NoDropout",
             "FLaG_E12Match",
             "STFT_FLaG",
         ],
