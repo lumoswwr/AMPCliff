@@ -170,6 +170,25 @@ class SprintEncoder(nn.Module):
                 fixed_fft_length=None,
             )
 
+        elif pooling == "FLaG_E12Match":
+            # Mechanism control:
+            # identical non-operator settings to frozen E12, but use
+            # the original GLOBAL FFT reconstruction operator.
+            self.pool = FFTLatentAttentionGatePooling(
+                d_model=d_model,
+                num_latents=8,
+                num_heads=4,
+                dropout=0.0,
+                time_pool="max",
+                gate_residual=True,
+                eps=1e-6,
+                use_gate=True,
+                use_latent=True,
+                post_pool_norm=True,
+                window_type=None,
+                fixed_fft_length=None,
+            )
+
         elif pooling == "STFT_FLaG":
             self.pool = STFTLatentAttentionGatePooling(
                 d_model=d_model,
@@ -733,6 +752,16 @@ def train(args):
         print("- residual gate: True")
         print("- post_pool_norm: False")
 
+    if args.pooling == "FLaG_E12Match":
+        print("\nMatched global control for E12:")
+        print("- operator: global FFT")
+        print("- num_latents: 8")
+        print("- num_heads: 4")
+        print("- dropout: 0.0")
+        print("- time_pool: max")
+        print("- residual gate: True")
+        print("- post_pool_norm: True")
+
     if args.pooling == "STFT_FLaG":
         print("\nFrozen E12:")
         print("- win_length:", args.stft_win_length)
@@ -987,6 +1016,20 @@ def train(args):
             "time_pool": "max",
             "gate_residual": True,
             "post_pool_norm": False,
+        },
+        "matched_global_control": {
+            "name": "FLaG_E12Match",
+            "purpose": (
+                "mechanism control isolating global vs local operator "
+                "while matching E12 non-operator settings"
+            ),
+            "operator": "global FFT",
+            "num_latents": 8,
+            "num_heads": 4,
+            "dropout": 0.0,
+            "time_pool": "max",
+            "gate_residual": True,
+            "post_pool_norm": True,
         },
         "stft_frozen_e12": {
             "win_length": 16,
@@ -1407,6 +1450,7 @@ def main():
         choices=[
             "mean",
             "FLaG",
+            "FLaG_E12Match",
             "STFT_FLaG",
         ],
         required=True,
