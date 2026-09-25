@@ -874,14 +874,63 @@ non-operator settings:
     FLaG: dropout=0.1, post_pool_norm=False
     E12:  dropout=0.0, post_pool_norm=True
 
-Therefore the training-regime effect above cannot yet be attributed purely to
-training with the local reconstruction operator. A matched global control with
-E12's non-operator settings is required for that causal isolation.
+A matched global control was therefore trained using E12's non-operator
+settings but restoring the original global FFT operator:
+
+    FLaG_E12Match:
+    global FFT
+    dropout=0.0
+    post_pool_norm=True
+    same latent/head/pooling/training protocol as E12
+
+Three-seed validation AP:
+
+    GlobalMatch:
+    0.792527 ± 0.025459
+
+    E12:
+    0.792300 ± 0.019954
+
+Paired E12 - GlobalMatch:
+
+    seed 0: +0.005125
+    seed 1: +0.002063
+    seed 2: -0.007869
+
+    mean delta = -0.000227 ± 0.006793
+    2/3 seeds positive
+
+For the same three seeds, relative to original published-setting FLaG:
+
+    GlobalMatch - FLaG:
+    +0.026240 ± 0.024479
+
+    E12 - FLaG:
+    +0.026013 ± 0.017688
+
+Thus the three-seed matched control nearly reproduces the entire E12-vs-FLaG
+validation AP improvement without using local STFT reconstruction.
+
+Current interpretation:
+
+1. The architectural statement remains strong:
+   global/local forward differences are reconstruction-dominated.
+
+2. There is no current evidence that training with the local operator itself
+   improves Sprint AP once non-operator settings are matched.
+
+3. The strong 10-seed frozen-E12-vs-published-FLaG test result remains a valid
+   comparison between those two frozen configurations, but it cannot be used
+   as causal evidence that the STFT/local operator is responsible for the gain.
+
+4. The Sprint gain may be driven substantially by non-operator configuration
+   differences, especially dropout/post-pool normalization, or by interactions
+   among those settings and the operator.
 
 Do not interpret the reconstruction-dominance result as proof that local
 reconstruction causally improves performance. It identifies where the
-architectural representation difference enters the forward pass, while the
-performance gain appears to depend importantly on the broader training regime.
+architectural representation difference enters the forward pass, not why the
+broader E12 configuration performs better.
 
 ---
 
