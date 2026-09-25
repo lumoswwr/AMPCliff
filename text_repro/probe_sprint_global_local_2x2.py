@@ -420,7 +420,13 @@ def main():
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=32,
+        default=64,
+        help=(
+            "Evaluation batch size. For exact replay of the Sprint "
+            "checkpoints this must match the training eval_batch_size "
+            "(64), because global FLaG is sensitive to dynamic-padding "
+            "FFT length."
+        ),
     )
 
     parser.add_argument(
@@ -450,6 +456,32 @@ def main():
         args.source,
         args.seed,
     )
+
+    with open(
+        ckpt_dir / "config.json"
+    ) as f:
+        source_cfg = json.load(f)
+
+    expected_eval_batch_size = int(
+        source_cfg.get(
+            "eval_batch_size",
+            64,
+        )
+    )
+
+    if (
+        args.limit is None
+        and args.batch_size
+        != expected_eval_batch_size
+    ):
+        raise ValueError(
+            "Full Sprint probe must replay the checkpoint's "
+            "evaluation batch convention exactly. "
+            f"Got --batch_size={args.batch_size}, "
+            f"but config eval_batch_size="
+            f"{expected_eval_batch_size}. "
+            "Global FLaG depends on dynamic-padding FFT length."
+        )
 
     print("device:", device)
     print("source:", args.source)
