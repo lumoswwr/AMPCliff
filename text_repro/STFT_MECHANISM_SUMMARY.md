@@ -883,33 +883,44 @@ settings but restoring the original global FFT operator:
     post_pool_norm=True
     same latent/head/pooling/training protocol as E12
 
-Three-seed validation AP:
+This control was expanded to 10 seeds on the adaptation validation split.
+
+10-seed validation AP:
+
+    original FLaG:
+    0.750936 ± 0.025820
 
     GlobalMatch:
-    0.792527 ± 0.025459
+    0.795830 ± 0.017156
 
     E12:
-    0.792300 ± 0.019954
+    0.789136 ± 0.014094
+
+Paired GlobalMatch - original FLaG:
+
+    mean delta = +0.044893 ± 0.036252
+    10/10 seeds positive
+    paired 95% CI approximately [+0.0190, +0.0708]
+
+Paired E12 - original FLaG:
+
+    mean delta = +0.038200 ± 0.022157
+    10/10 seeds positive
+    paired 95% CI approximately [+0.0223, +0.0541]
 
 Paired E12 - GlobalMatch:
 
-    seed 0: +0.005125
-    seed 1: +0.002063
-    seed 2: -0.007869
+    mean delta = -0.006693 ± 0.017279
+    4/10 seeds positive
+    6/10 seeds negative
+    paired 95% CI approximately [-0.0191, +0.0057]
+    paired t-test p approximately 0.252
+    Wilcoxon two-sided p approximately 0.375
 
-    mean delta = -0.000227 ± 0.006793
-    2/3 seeds positive
-
-For the same three seeds, relative to original published-setting FLaG:
-
-    GlobalMatch - FLaG:
-    +0.026240 ± 0.024479
-
-    E12 - FLaG:
-    +0.026013 ± 0.017688
-
-Thus the three-seed matched control nearly reproduces the entire E12-vs-FLaG
-validation AP improvement without using local STFT reconstruction.
+Thus the matched global control reproduces, and on average slightly exceeds,
+the E12 validation AP improvement without using local STFT reconstruction.
+There is no evidence of a stable local-operator advantage once the
+non-operator settings are matched.
 
 Current interpretation:
 
