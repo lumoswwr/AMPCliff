@@ -1,0 +1,11 @@
+{
+  "experiment": "E4_stft_flag_w8_h4_framepos",
+  "seed": 2,
+  "pooling": "STFT_FLaG_Pos",
+  "best_epoch": 3,
+  "best_val_spearman": 0.8652331728500067,
+  "final_val_spearman": 0.8652331728500067,
+  "final_val_pearson": 0.8611245374141747,
+  "test_spearman": 0.8402446752425909,
+  "test_pearson": 0.83737798699212
+}

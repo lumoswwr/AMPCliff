@@ -1,0 +1,11 @@
+{
+  "model": "FLaG",
+  "seed": 2,
+  "test_pairs": 1379,
+  "token_knockouts": 33383,
+  "mean_abs_sqerr_change": 0.0027453068735262143,
+  "median_abs_sqerr_change": 0.001258213073015213,
+  "mean_abs_pred_change": 0.009774624077931358,
+  "baseline_spearman": 0.8387692737028543,
+  "baseline_pearson": 0.8347386276617021
+}

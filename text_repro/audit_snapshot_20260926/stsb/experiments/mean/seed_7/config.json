@@ -1,0 +1,19 @@
+{
+  "pooling": "mean",
+  "seed": 7,
+  "model_path": "/home/data/home/wwr_lumos/models/roberta-base",
+  "data_path": "/home/data/home/wwr_lumos/AMPCliff/data/text/stsbenchmark",
+  "output_dir": "/home/data/home/wwr_lumos/AMPCliff/outputs/text/stsbenchmark",
+  "epochs": 3,
+  "batch_size": 4,
+  "grad_accum": 4,
+  "max_length": 128,
+  "backbone_lr": 1e-05,
+  "pool_lr": 0.001,
+  "weight_decay": 0.01,
+  "warmup_ratio": 0.1,
+  "log_every": 100,
+  "limit_train": null,
+  "limit_val": null,
+  "limit_test": null
+}

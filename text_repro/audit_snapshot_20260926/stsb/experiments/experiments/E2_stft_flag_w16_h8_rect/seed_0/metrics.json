@@ -1,0 +1,11 @@
+{
+  "experiment": "E2_stft_flag_w16_h8_rect",
+  "seed": 0,
+  "pooling": "STFT_FLaG",
+  "best_epoch": 3,
+  "best_val_spearman": 0.867300651143285,
+  "final_val_spearman": 0.867300651143285,
+  "final_val_pearson": 0.8631293687719016,
+  "test_spearman": 0.8427142988394486,
+  "test_pearson": 0.8402267816768494
+}

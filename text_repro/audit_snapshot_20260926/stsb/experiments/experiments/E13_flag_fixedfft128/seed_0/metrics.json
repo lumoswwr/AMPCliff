@@ -1,0 +1,11 @@
+{
+  "experiment": "E13_flag_fixedfft128",
+  "seed": 0,
+  "pooling": "FLaG",
+  "best_epoch": 3,
+  "best_val_spearman": 0.8666667770409249,
+  "final_val_spearman": 0.8666667770409249,
+  "final_val_pearson": 0.8622991551841561,
+  "test_spearman": 0.8411071158706102,
+  "test_pearson": 0.8389494192328417
+}

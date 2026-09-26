@@ -1,0 +1,10 @@
+{
+  "seed": 9,
+  "pooling": "mean",
+  "best_epoch": 3,
+  "best_val_spearman": 0.8818727448165826,
+  "final_val_spearman": 0.8818727448165826,
+  "final_val_pearson": 0.8812590141147568,
+  "test_spearman": 0.8497018138619477,
+  "test_pearson": 0.8552078205859505
+}

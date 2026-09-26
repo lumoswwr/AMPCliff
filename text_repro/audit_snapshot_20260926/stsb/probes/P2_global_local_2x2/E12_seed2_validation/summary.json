@@ -1,0 +1,34 @@
+{
+  "source": "E12",
+  "seed": 2,
+  "split": "validation",
+  "n_pairs": 1500,
+  "metrics": {
+    "GG": {
+      "spearman": 0.866549298312269,
+      "pearson": 0.8615425650946602
+    },
+    "LG": {
+      "spearman": 0.866549298312269,
+      "pearson": 0.8615425642480059
+    },
+    "GL": {
+      "spearman": 0.8669043910836972,
+      "pearson": 0.8618571905442104
+    },
+    "LL": {
+      "spearman": 0.8669043910836972,
+      "pearson": 0.8618571924241886
+    }
+  },
+  "prediction_effects": {
+    "mean_abs_observation": 2.505366380016009e-07,
+    "mean_abs_reconstruction": 0.006410701272388299,
+    "mean_abs_total": 0.006410709005780518,
+    "mean_abs_interaction": 1.6123739381631215e-07,
+    "corr_observation_total": 0.014480302318474329,
+    "corr_reconstruction_total": 0.9999999988448846,
+    "gate_mae": 1.3800915285078948e-06,
+    "gate_cosine": 0.9999999886751175
+  }
+}

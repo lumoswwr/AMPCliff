@@ -1,0 +1,13 @@
+{
+  "model": "E3_STFT_w8_h4_rect",
+  "seed": 1,
+  "sentences": 2758,
+  "mean_attn_preference_ratio": 1.2134189416827976,
+  "median_attn_preference_ratio": 1.2135141491889954,
+  "mean_dc_mass_lift": 1.1635958425716872,
+  "mean_energy_ratio": 33.32962888509489,
+  "median_energy_ratio": 32.615455627441406,
+  "mean_gate_mean": 0.8033136048984321,
+  "mean_gate_std": 0.3972093444574216,
+  "mean_attention_entropy": 0.9985744468840765
+}

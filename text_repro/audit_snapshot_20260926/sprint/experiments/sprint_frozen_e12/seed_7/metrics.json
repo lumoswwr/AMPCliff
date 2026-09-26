@@ -1,0 +1,23 @@
+{
+  "experiment": "sprint_frozen_e12",
+  "seed": 7,
+  "pooling": "STFT_FLaG",
+  "best_epoch": 8,
+  "best_val_accuracy": 0.9955445544554455,
+  "val_accuracy_threshold": -0.9646000862121582,
+  "val_f1_threshold": -0.9646000862121582,
+  "final_val_average_precision": 0.7887553818850866,
+  "final_val_cosine_average_precision": 0.7887553818850866,
+  "final_val_accuracy": 0.9955445544554455,
+  "final_val_f1": 0.7457627118644068,
+  "final_val_precision": 0.8571428571428571,
+  "final_val_recall": 0.66,
+  "final_val_predicted_positive_rate": 0.007623762376237624,
+  "test_average_precision": 0.772440501383081,
+  "test_cosine_average_precision": 0.7724405013830808,
+  "test_accuracy": 0.9945445544554455,
+  "test_f1": 0.6678722121760097,
+  "test_precision": 0.8406676783004552,
+  "test_recall": 0.554,
+  "test_predicted_positive_rate": 0.0065247524752475245
+}

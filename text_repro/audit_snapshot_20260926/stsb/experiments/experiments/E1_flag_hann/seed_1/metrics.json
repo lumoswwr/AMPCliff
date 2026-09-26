@@ -1,0 +1,11 @@
+{
+  "experiment": "E1_flag_hann",
+  "seed": 1,
+  "pooling": "FLaG_Hann",
+  "best_epoch": 3,
+  "best_val_spearman": 0.857979527281241,
+  "final_val_spearman": 0.857979527281241,
+  "final_val_pearson": 0.8540492014592714,
+  "test_spearman": 0.8354462473183566,
+  "test_pearson": 0.836819372187044
+}

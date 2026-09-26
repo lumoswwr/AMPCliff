@@ -1,0 +1,71 @@
+{
+  "pooling": "STFT_FLaG",
+  "experiment_name": "sprint_frozen_e12",
+  "seed": 2,
+  "model_path": "/home/data/home/wwr_lumos/models/roberta-base",
+  "data_path": "/home/data/home/wwr_lumos/AMPCliff/data/text/sprintduplicatequestions_adaptation",
+  "output_dir": "/home/data/home/wwr_lumos/AMPCliff/outputs/text/sprintduplicatequestions",
+  "epochs": 10,
+  "batch_size": 32,
+  "eval_batch_size": 64,
+  "max_length": 128,
+  "learning_rate": 0.001,
+  "weight_decay": 0.01,
+  "log_every": 500,
+  "limit_train": null,
+  "limit_val": null,
+  "limit_test": null,
+  "skip_test": false,
+  "stft_win_length": 16,
+  "stft_hop_length": 16,
+  "stft_window_type": "rect",
+  "stft_center": false,
+  "protocol_notes": {
+    "paper_specified": {
+      "backbone": "RoBERTa-base bi-encoder",
+      "backbone_frozen": true,
+      "trainable": "pooling module + lightweight head",
+      "epochs": 10,
+      "learning_rate": 0.001,
+      "loss": "BCEWithLogitsLoss",
+      "checkpoint_criterion": "validation accuracy",
+      "metrics": [
+        "accuracy",
+        "average_precision",
+        "f1"
+      ],
+      "max_length": 128
+    },
+    "reproduction_choices_not_reported_in_public_release": {
+      "split": "fixed stratified 90/10 split of official validation; random_state=42; shared across model seeds",
+      "cosine_logit_head": "monotone affine cosine scorer: softplus(raw_scale) * cosine + bias; scale_init=1.0",
+      "optimizer": "AdamW",
+      "weight_decay": 0.01,
+      "scheduler": "none",
+      "batch_size": 32,
+      "eval_batch_size": 64,
+      "frozen_backbone_mode": "eval + no_grad",
+      "decision_threshold": "validation-calibrated; best validation accuracy threshold for Accuracy and checkpoint selection, best validation F1 threshold for F1/precision/recall; thresholds then frozen",
+      "checkpoint_tie_break": "keep earliest epoch"
+    },
+    "published_flag_core_settings": {
+      "num_latents": 8,
+      "num_heads": 4,
+      "dropout": 0.1,
+      "time_pool": "max",
+      "gate_residual": true,
+      "post_pool_norm": false
+    },
+    "stft_frozen_e12": {
+      "win_length": 16,
+      "hop_length": 16,
+      "window_type": "rect",
+      "center": false,
+      "frame_positional_encoding": false,
+      "num_latents": 8,
+      "num_heads": 4,
+      "dropout": 0.0,
+      "post_pool_norm": true
+    }
+  }
+}

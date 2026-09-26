@@ -1,0 +1,10 @@
+{
+  "seed": 1,
+  "pooling": "FLaG",
+  "best_epoch": 3,
+  "best_val_spearman": 0.8699903149187682,
+  "final_val_spearman": 0.8699903149187682,
+  "final_val_pearson": 0.8641605998733964,
+  "test_spearman": 0.8430616506956973,
+  "test_pearson": 0.8374634770493211
+}

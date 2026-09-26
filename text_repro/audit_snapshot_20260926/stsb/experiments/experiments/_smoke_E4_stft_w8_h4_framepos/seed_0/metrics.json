@@ -1,0 +1,11 @@
+{
+  "experiment": "_smoke_E4_stft_w8_h4_framepos",
+  "seed": 0,
+  "pooling": "STFT_FLaG_Pos",
+  "best_epoch": 1,
+  "best_val_spearman": 0.4030066673474718,
+  "final_val_spearman": 0.4030066673474718,
+  "final_val_pearson": 0.4481103154344399,
+  "test_spearman": 0.17027955406769185,
+  "test_pearson": 0.311521785170434
+}

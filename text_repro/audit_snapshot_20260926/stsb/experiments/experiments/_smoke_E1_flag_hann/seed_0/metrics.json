@@ -1,0 +1,11 @@
+{
+  "experiment": "_smoke_E1_flag_hann",
+  "seed": 0,
+  "pooling": "FLaG_Hann",
+  "best_epoch": 1,
+  "best_val_spearman": 0.2646059365619347,
+  "final_val_spearman": 0.2646059365619347,
+  "final_val_pearson": 0.34161804680868524,
+  "test_spearman": -0.07990464511267092,
+  "test_pearson": 0.002183380084195566
+}

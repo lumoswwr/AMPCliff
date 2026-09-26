@@ -1,0 +1,23 @@
+{
+  "experiment": "sprint_frozen_mean",
+  "seed": 1,
+  "pooling": "mean",
+  "best_epoch": 1,
+  "best_val_accuracy": 0.9908910891089109,
+  "val_accuracy_threshold": -1.7058552503585815,
+  "val_f1_threshold": -1.7065094709396362,
+  "final_val_average_precision": 0.30201460661071594,
+  "final_val_cosine_average_precision": 0.3020181157593537,
+  "final_val_accuracy": 0.9908910891089109,
+  "final_val_f1": 0.39759036144578314,
+  "final_val_precision": 0.5,
+  "final_val_recall": 0.33,
+  "final_val_predicted_positive_rate": 0.006534653465346534,
+  "test_average_precision": 0.4289040193246276,
+  "test_cosine_average_precision": 0.4289215358147639,
+  "test_accuracy": 0.992039603960396,
+  "test_f1": 0.460390355912744,
+  "test_precision": 0.5404312668463612,
+  "test_recall": 0.401,
+  "test_predicted_positive_rate": 0.007346534653465346
+}

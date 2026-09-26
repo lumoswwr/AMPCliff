@@ -1,0 +1,23 @@
+{
+  "experiment": "sprint_frozen_flag",
+  "seed": 2,
+  "pooling": "FLaG",
+  "best_epoch": 10,
+  "best_val_accuracy": 0.9948514851485148,
+  "val_accuracy_threshold": -0.8959851264953613,
+  "val_f1_threshold": -1.231109380722046,
+  "final_val_average_precision": 0.7599757392342872,
+  "final_val_cosine_average_precision": 0.7599757392342873,
+  "final_val_accuracy": 0.9948514851485148,
+  "final_val_f1": 0.731958762886598,
+  "final_val_precision": 0.7553191489361702,
+  "final_val_recall": 0.71,
+  "final_val_predicted_positive_rate": 0.009306930693069307,
+  "test_average_precision": 0.7107211942894363,
+  "test_cosine_average_precision": 0.7107211942894364,
+  "test_accuracy": 0.9936930693069307,
+  "test_f1": 0.6596082583377448,
+  "test_precision": 0.7007874015748031,
+  "test_recall": 0.623,
+  "test_predicted_positive_rate": 0.008801980198019801
+}

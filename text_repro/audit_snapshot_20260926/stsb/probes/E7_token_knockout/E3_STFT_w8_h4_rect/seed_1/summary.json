@@ -1,0 +1,11 @@
+{
+  "model": "E3_STFT_w8_h4_rect",
+  "seed": 1,
+  "test_pairs": 1379,
+  "token_knockouts": 33383,
+  "mean_abs_sqerr_change": 0.002810665721429143,
+  "median_abs_sqerr_change": 0.0012190751731395721,
+  "mean_abs_pred_change": 0.010013916719798828,
+  "baseline_spearman": 0.8436530880498223,
+  "baseline_pearson": 0.8372883234670526
+}

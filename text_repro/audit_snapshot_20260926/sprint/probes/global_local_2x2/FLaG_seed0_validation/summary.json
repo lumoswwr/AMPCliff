@@ -1,0 +1,63 @@
+{
+  "source": "FLaG",
+  "seed": 0,
+  "split": "validation",
+  "n_pairs": 10100,
+  "source_pool": {
+    "dropout": 0.1,
+    "post_pool_norm": false,
+    "time_pool": "max"
+  },
+  "sanity": {
+    "max_gg_manual_diff": 0.0,
+    "max_ll_manual_diff": 0.0,
+    "max_source_native_diff": 0.0,
+    "source_mode": "GG",
+    "expected_source_ap": 0.7576902989436952,
+    "probe_source_ap": 0.7576902989436952,
+    "source_ap_abs_diff": 0.0
+  },
+  "average_precision": {
+    "GG": 0.7576902989436952,
+    "LG": 0.7576902989436952,
+    "GL": 0.7532927498077252,
+    "LL": 0.7532927498077252
+  },
+  "ap_effects": {
+    "LG_minus_GG": 0.0,
+    "GL_minus_GG": -0.004397549135970014,
+    "LL_minus_GG": -0.004397549135970014
+  },
+  "prediction_effects": {
+    "observation": {
+      "mean_abs": 0.0,
+      "median_abs": 0.0,
+      "max_abs": 0.0,
+      "mean_signed": 0.0
+    },
+    "reconstruction": {
+      "mean_abs": 0.028991155925801596,
+      "median_abs": 0.023517556488513947,
+      "max_abs": 0.17195383831858635,
+      "mean_signed": 0.006375003921555005
+    },
+    "total_local": {
+      "mean_abs": 0.028991155925801596,
+      "median_abs": 0.023517556488513947,
+      "max_abs": 0.17195383831858635,
+      "mean_signed": 0.006375003921555005
+    },
+    "interaction": {
+      "mean_abs": 0.0,
+      "median_abs": 0.0,
+      "max_abs": 0.0,
+      "mean_signed": 0.0
+    },
+    "corr_observation_total": NaN,
+    "corr_reconstruction_total": 1.0
+  },
+  "gate": {
+    "mean_mae": 8.463838039809993e-15,
+    "mean_cosine": 1.0
+  }
+}

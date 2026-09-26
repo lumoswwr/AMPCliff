@@ -1,0 +1,16 @@
+{
+  "experiment": "sprint_flag_postnorm",
+  "seed": 0,
+  "pooling": "FLaG_PostNorm",
+  "best_epoch": 8,
+  "best_val_accuracy": 0.9955445544554455,
+  "val_accuracy_threshold": -1.0387279987335205,
+  "val_f1_threshold": -1.0747129917144775,
+  "final_val_average_precision": 0.7835541867607532,
+  "final_val_cosine_average_precision": 0.7835541867607532,
+  "final_val_accuracy": 0.9955445544554455,
+  "final_val_f1": 0.7540983606557377,
+  "final_val_precision": 0.8313253012048193,
+  "final_val_recall": 0.69,
+  "final_val_predicted_positive_rate": 0.008217821782178218
+}

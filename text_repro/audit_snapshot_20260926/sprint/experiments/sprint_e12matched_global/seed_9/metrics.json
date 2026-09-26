@@ -1,0 +1,16 @@
+{
+  "experiment": "sprint_e12matched_global",
+  "seed": 9,
+  "pooling": "FLaG_E12Match",
+  "best_epoch": 10,
+  "best_val_accuracy": 0.9959405940594059,
+  "val_accuracy_threshold": -1.067185878753662,
+  "val_f1_threshold": -1.067185878753662,
+  "final_val_average_precision": 0.8188279220700664,
+  "final_val_cosine_average_precision": 0.8188279220700664,
+  "final_val_accuracy": 0.9959405940594059,
+  "final_val_f1": 0.7807486631016043,
+  "final_val_precision": 0.8390804597701149,
+  "final_val_recall": 0.73,
+  "final_val_predicted_positive_rate": 0.008613861386138615
+}

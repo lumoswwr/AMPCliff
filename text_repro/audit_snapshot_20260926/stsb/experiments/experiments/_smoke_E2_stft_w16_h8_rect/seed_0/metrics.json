@@ -1,0 +1,11 @@
+{
+  "experiment": "_smoke_E2_stft_w16_h8_rect",
+  "seed": 0,
+  "pooling": "STFT_FLaG",
+  "best_epoch": 1,
+  "best_val_spearman": 0.4285064014574906,
+  "final_val_spearman": 0.4285064014574906,
+  "final_val_pearson": 0.4538765520856552,
+  "test_spearman": 0.19066901523437338,
+  "test_pearson": 0.3143922378603815
+}

@@ -1,0 +1,22 @@
+{
+  "pooling": "STFT_FLaG_Pos",
+  "experiment_name": "_smoke_E4_stft_w8_h4_framepos",
+  "seed": 0,
+  "model_path": "/home/data/home/wwr_lumos/models/roberta-base",
+  "data_path": "/home/data/home/wwr_lumos/AMPCliff/data/text/stsbenchmark",
+  "output_dir": "/home/data/home/wwr_lumos/AMPCliff/outputs/text/stsbenchmark",
+  "epochs": 1,
+  "batch_size": 4,
+  "grad_accum": 4,
+  "max_length": 128,
+  "stft_win_length": 8,
+  "stft_hop_length": 4,
+  "backbone_lr": 1e-05,
+  "pool_lr": 0.001,
+  "weight_decay": 0.01,
+  "warmup_ratio": 0.1,
+  "log_every": 100,
+  "limit_train": 32,
+  "limit_val": 32,
+  "limit_test": 32
+}

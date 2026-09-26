@@ -1,0 +1,13 @@
+{
+  "model": "FLaG",
+  "seed": 0,
+  "sentences": 2758,
+  "mean_attn_preference_ratio": 2.601676870032097,
+  "median_attn_preference_ratio": 1.9171540141105652,
+  "mean_dc_mass_lift": 2.2010965714686326,
+  "mean_energy_ratio": 39.212333112458026,
+  "median_energy_ratio": 27.144559860229492,
+  "mean_gate_mean": 0.8814066077506222,
+  "mean_gate_std": 0.3229680327918756,
+  "mean_attention_entropy": 0.9749373317715739
+}

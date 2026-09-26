@@ -1,0 +1,13 @@
+{
+  "seed": 0,
+  "split": "test",
+  "n_pairs": 1379,
+  "fixed_n": 128,
+  "max_native_tt_diff": 0.0,
+  "modes": {
+    "TT": {
+      "spearman": 0.8415516843662473,
+      "pearson": 0.8380914401324473
+    }
+  }
+}

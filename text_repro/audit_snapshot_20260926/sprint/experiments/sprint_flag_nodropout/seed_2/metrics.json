@@ -1,0 +1,16 @@
+{
+  "experiment": "sprint_flag_nodropout",
+  "seed": 2,
+  "pooling": "FLaG_NoDropout",
+  "best_epoch": 10,
+  "best_val_accuracy": 0.9956435643564356,
+  "val_accuracy_threshold": -0.8980975151062012,
+  "val_f1_threshold": -1.4678120613098145,
+  "final_val_average_precision": 0.8017585421719383,
+  "final_val_cosine_average_precision": 0.8017585421719383,
+  "final_val_accuracy": 0.9956435643564356,
+  "final_val_f1": 0.7475728155339806,
+  "final_val_precision": 0.7264150943396226,
+  "final_val_recall": 0.77,
+  "final_val_predicted_positive_rate": 0.010495049504950496
+}
