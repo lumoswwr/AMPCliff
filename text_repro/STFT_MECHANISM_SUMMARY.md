@@ -1051,3 +1051,114 @@ broader E12 configuration performs better.
 - The strongest current statement is that local reconstruction is the dominant
   architectural source of the representation difference between global and
   local variants.
+
+
+---
+
+# 19. Project-level synthesis after STSB + Sprint
+
+The project now supports four separate layers of conclusions.
+
+## 19.1 Performance facts
+
+STSB:
+
+- Mean pooling remains clearly stronger than FLaG-family methods.
+- Frozen E12 is the strongest tested FLaG/STFT variant.
+- On seeds 0-2, E12 improves over matched global FLaG on Spearman in 3/3 seeds.
+- The absolute gain is small.
+
+SprintDuplicateQuestions:
+
+- FLaG-family pooling is much stronger than Mean pooling.
+- Frozen E12 improves strongly over the published-setting original FLaG
+  configuration on the official test split.
+- However matched-control experiments show that this Sprint gain should not be
+  attributed to the local STFT operator.
+
+Therefore pooling quality is strongly task-dependent.
+
+## 19.2 Architectural mechanism
+
+Across both STSB and Sprint:
+
+- global and local spectral observations produce essentially identical
+  sample-level gates;
+- changing only the gate-observation source has negligible effect;
+- changing global vs local inverse reconstruction materially changes the
+  resulting sentence representation.
+
+Thus the strongest cross-task architectural conclusion is:
+
+    the global/local representation difference is reconstruction-dominated,
+    not gate-observation-dominated.
+
+This conclusion is substantially stronger than any current causal claim about
+performance.
+
+## 19.3 Causal performance evidence
+
+Sprint matched controls show:
+
+- local STFT is not necessary to reproduce the E12-vs-original-FLaG gain;
+- matched global FLaG performs approximately as well as E12;
+- the dominant Sprint performance effects instead come from non-operator
+  configuration, especially the dropout x post-pool-normalization interaction.
+
+The best tested global-FFT Sprint validation configuration is:
+
+    dropout=0.1
+    post_pool_norm=True
+
+with a large 10/10-seed improvement over the original published-setting FLaG
+configuration.
+
+Therefore the following claim is NOT supported:
+
+    local reconstruction generally improves downstream performance.
+
+## 19.4 What remains unresolved
+
+STSB is the only tested task where a matched global-vs-local operator
+comparison currently favors E12.
+
+Importantly, train_sts.py already matches the relevant non-operator settings:
+
+    global FLaG:
+    dropout=0.0
+    post_pool_norm=True
+
+    E12:
+    dropout=0.0
+    post_pool_norm=True
+
+Thus the STSB comparison is not affected by the Sprint dropout/norm confound.
+
+However the E12 STSB result was selected after multiple STFT variants were
+explored on STSB, and the current matched E12-vs-FLaG comparison uses only
+three seeds.
+
+Therefore a larger STSB seed expansion can be used only as a stability check,
+not as an independent confirmatory benchmark.
+
+## 19.5 Minimal remaining experiment
+
+Do not add more Sprint hyperparameter sweeps.
+
+The most useful remaining experiment is:
+
+    expand frozen STSB E12 to seeds 3-9
+    under exactly the already-frozen E12 configuration
+
+and compare against the already-existing 10-seed matched FLaG baseline.
+
+Purpose:
+
+- estimate whether the small STSB operator-associated gain is seed-stable;
+- clarify whether STSB is a real task-specific operator effect or a 3-seed
+  fluctuation;
+- do not reinterpret this as an unbiased confirmatory result because E12 was
+  selected on STSB.
+
+After this stability check, stop mechanism experimentation unless a genuinely
+new preregistered benchmark is introduced.
