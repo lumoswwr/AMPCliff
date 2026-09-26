@@ -1117,12 +1117,12 @@ Therefore the following claim is NOT supported:
 
     local reconstruction generally improves downstream performance.
 
-## 19.4 What remains unresolved
+## 19.4 STSB 10-seed stability check
 
-STSB is the only tested task where a matched global-vs-local operator
-comparison currently favors E12.
+The frozen E12 STSB configuration was expanded from seeds 0-2 to seeds 0-9,
+without changing any hyperparameters.
 
-Importantly, train_sts.py already matches the relevant non-operator settings:
+The relevant non-operator settings remain matched:
 
     global FLaG:
     dropout=0.0
@@ -1132,33 +1132,73 @@ Importantly, train_sts.py already matches the relevant non-operator settings:
     dropout=0.0
     post_pool_norm=True
 
-Thus the STSB comparison is not affected by the Sprint dropout/norm confound.
+10-seed test results:
 
-However the E12 STSB result was selected after multiple STFT variants were
-explored on STSB, and the current matched E12-vs-FLaG comparison uses only
-three seeds.
+    FLaG Spearman:
+    0.841559 ± 0.003538
 
-Therefore a larger STSB seed expansion can be used only as a stability check,
-not as an independent confirmatory benchmark.
+    E12 Spearman:
+    0.842739 ± 0.003214
 
-## 19.5 Minimal remaining experiment
+    paired E12 - FLaG Spearman:
+    +0.001180 ± 0.002107
+    7/10 seeds positive
+    95% CI approximately [-0.00033, +0.00269]
+    paired t-test p approximately 0.110
+    Wilcoxon two-sided p approximately 0.232
 
-Do not add more Sprint hyperparameter sweeps.
+    FLaG Pearson:
+    0.838504 ± 0.003444
 
-The most useful remaining experiment is:
+    E12 Pearson:
+    0.839393 ± 0.003467
 
-    expand frozen STSB E12 to seeds 3-9
-    under exactly the already-frozen E12 configuration
+    paired E12 - FLaG Pearson:
+    +0.000889 ± 0.003033
+    5/10 seeds positive
+    95% CI approximately [-0.00128, +0.00306]
+    paired t-test p approximately 0.378
+    Wilcoxon two-sided p approximately 0.557
 
-and compare against the already-existing 10-seed matched FLaG baseline.
+Thus the initial 3/3 positive STSB signal does not become a strong or
+statistically stable operator advantage at 10 seeds.
 
-Purpose:
+The correct interpretation is:
 
-- estimate whether the small STSB operator-associated gain is seed-stable;
-- clarify whether STSB is a real task-specific operator effect or a 3-seed
-  fluctuation;
-- do not reinterpret this as an unbiased confirmatory result because E12 was
-  selected on STSB.
+    E12 shows a small positive mean tendency on STSB,
+    but a robust local-operator performance benefit is not established.
 
-After this stability check, stop mechanism experimentation unless a genuinely
-new preregistered benchmark is introduced.
+This result is consistent with the Sprint matched controls, which also fail to
+show a stable local-operator advantage.
+
+## 19.5 Final mechanism status
+
+Do not add more Sprint or STSB hyperparameter sweeps.
+
+The strongest conclusions now concern architecture rather than performance:
+
+1. Global FLaG is sensitive to dynamic-padding / FFT length.
+2. Re/Im asymmetric gating induces a circular reflection term.
+3. That reflection explains most global padding-length sensitivity.
+4. Global and local spectral observations generate essentially the same
+   sample-level gate.
+5. Global/local representation differences are therefore dominated by the
+   reconstruction / temporal-support operator.
+6. This reconstruction-dominance result reproduces across STSB and Sprint.
+
+Not established:
+
+- local reconstruction generally improves downstream performance;
+- local-operator training yields a robust advantage;
+- E12 is a generally superior replacement for original FLaG.
+
+Performance observations should be reported as task- and configuration-specific:
+
+- STSB: E12 has a weak positive mean tendency over matched FLaG.
+- Sprint: frozen E12 beats the published-setting FLaG configuration, but
+  matched controls show that non-operator settings, especially the
+  dropout x post-pool-normalization interaction, explain much of that gain.
+
+Further mechanism experimentation should require a genuinely new,
+pre-specified hypothesis or benchmark rather than additional tuning on STSB
+or Sprint.
