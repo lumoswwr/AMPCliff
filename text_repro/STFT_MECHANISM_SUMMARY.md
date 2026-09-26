@@ -956,51 +956,82 @@ Configurations:
     Both / GlobalMatch:
     dropout=0.0, post_pool_norm=True
 
-Three-seed validation AP:
+This control was expanded to 10 seeds on the adaptation validation split.
+
+10-seed validation AP:
 
     Original:
-    0.766287 ± 0.012961
+    0.750936 ± 0.025820
 
     PostNorm:
-    0.812461 ± 0.026084
+    0.819156 ± 0.015250
 
     NoDropout:
-    0.798390 ± 0.011007
+    0.798974 ± 0.007324
 
-    Both:
-    0.792527 ± 0.025459
+    Both / GlobalMatch:
+    0.795830 ± 0.017156
 
 Conditional effects:
 
     dropout 0.1 -> 0.0 with post_norm=False:
-    +0.032103 ± 0.008460
+    +0.048038 ± 0.024758
+    10/10 seeds positive
 
     dropout 0.1 -> 0.0 with post_norm=True:
-    -0.019934 ± 0.000656
+    -0.023326 ± 0.017170
+    10/10 seeds negative
 
     post_norm False -> True with dropout=0.1:
-    +0.046174 ± 0.025121
+    +0.068220 ± 0.029151
+    10/10 seeds positive
 
     post_norm False -> True with dropout=0.0:
-    -0.005863 ± 0.016923
+    -0.003145 ± 0.014885
+    5/10 seeds positive, 5/10 negative
 
 Interaction:
 
-    -0.052037 ± 0.009012
+    -0.071364 ± 0.021526
+    10/10 seeds negative
 
-This is a strong negative interaction pattern.
+Averaged main effects:
 
-The best mean configuration among these four three-seed controls is:
+    dropout main effect:
+    +0.012356 ± 0.018386
+    7/10 seeds positive
+
+    post_norm main effect:
+    +0.032538 ± 0.020490
+    10/10 seeds positive
+
+This is a strong and highly consistent negative interaction pattern.
+
+The best mean configuration among the four global-FFT controls is:
 
     dropout=0.1
     post_pool_norm=True
+
+with:
+
+    PostNorm - Original:
+    +0.068220 ± 0.029151
+    10/10 seeds positive
 
 Therefore neither "dropout=0 is better" nor "post_norm=True is always better"
 is an adequate interpretation. The effect of each factor depends strongly on
 the other.
 
-The averaged main effects are comparatively less informative because of the
-large interaction.
+More specifically:
+
+- Without post-pool normalization, removing dropout improves AP consistently.
+- With post-pool normalization, removing dropout hurts AP consistently.
+- With dropout=0.1, adding post-pool normalization gives the largest and most
+  stable improvement.
+- With dropout=0.0, adding post-pool normalization is essentially neutral.
+
+The averaged main effects are less informative than the conditional effects
+because the interaction is large.
 
 Do not interpret the reconstruction-dominance result as proof that local
 reconstruction causally improves performance. It identifies where the
