@@ -223,8 +223,24 @@ def run_one(args, seed):
         buffering=1,
     ) as log_file:
 
+        repo_root = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+
+        # train_sts.py imports the repository as the top-level
+        # package "AMPCliff", so Python must see the directory
+        # containing the repository, not only text_repro/.
+        parent_dir = str(repo_root.parent)
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (
+            parent_dir
+            if not existing_pythonpath
+            else parent_dir + os.pathsep + existing_pythonpath
+        )
+
         process = subprocess.Popen(
             cmd,
+            cwd=str(repo_root),
+            env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
