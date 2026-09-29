@@ -166,6 +166,10 @@ def run_one(args, seed):
         args.experiment_name,
         "--output_dir",
         args.output_dir,
+        "--pool_dropout",
+        str(args.pool_dropout),
+        "--post_pool_norm",
+        str(args.post_pool_norm),
     ]
 
     if args.pooling in {
@@ -447,6 +451,25 @@ def main():
         default=None,
         help=(
             "Fixed global FFT length passed to train_sts.py."
+        ),
+    )
+
+    parser.add_argument(
+        "--pool_dropout",
+        type=float,
+        default=0.0,
+        help=(
+            "Dropout used inside FLaG/STFT-FLaG pooling."
+        ),
+    )
+
+    parser.add_argument(
+        "--post_pool_norm",
+        type=int,
+        choices=[0, 1],
+        default=1,
+        help=(
+            "Whether to apply post-pool LayerNorm."
         ),
     )
 
