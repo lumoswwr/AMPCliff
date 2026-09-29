@@ -139,6 +139,8 @@ class SentenceEncoder(nn.Module):
         stft_window_type="rect",
         stft_center=False,
         fixed_fft_length=None,
+        pool_dropout=0.0,
+        post_pool_norm=True,
     ):
         super().__init__()
 
@@ -163,13 +165,13 @@ class SentenceEncoder(nn.Module):
                 d_model=d_model,
                 num_latents=8,
                 num_heads=4,
-                dropout=0.0,
+                dropout=pool_dropout,
                 time_pool="max",
                 gate_residual=True,
                 eps=1e-6,
                 use_gate=True,
                 use_latent=True,
-                post_pool_norm=True,
+                post_pool_norm=post_pool_norm,
                 window_type=window_type,
                 fixed_fft_length=fixed_fft_length,
             )
@@ -184,13 +186,13 @@ class SentenceEncoder(nn.Module):
                 hop_length=stft_hop_length,
                 num_latents=8,
                 num_heads=4,
-                dropout=0.0,
+                dropout=pool_dropout,
                 time_pool="max",
                 gate_residual=True,
                 eps=1e-6,
                 use_gate=True,
                 use_latent=True,
-                post_pool_norm=True,
+                post_pool_norm=post_pool_norm,
                 use_frame_positional_encoding=(
                     pooling == "STFT_FLaG_Pos"
                 ),
@@ -397,6 +399,8 @@ def train(args):
         stft_window_type=args.stft_window_type,
         stft_center=args.stft_center,
         fixed_fft_length=args.fixed_fft_length,
+        pool_dropout=args.pool_dropout,
+        post_pool_norm=bool(args.post_pool_norm),
     ).to(device)
 
     print("\nBackbone hidden size:",
@@ -875,6 +879,27 @@ def main():
         help=(
             "Use a fixed global FFT/iFFT length for FLaG. "
             "None keeps the original batch-dependent FFT length."
+        ),
+    )
+
+    parser.add_argument(
+        "--pool_dropout",
+        type=float,
+        default=0.0,
+        help=(
+            "Dropout used inside FLaG/STFT-FLaG pooling. "
+            "Default 0.0 preserves the existing STSB experiments."
+        ),
+    )
+
+    parser.add_argument(
+        "--post_pool_norm",
+        type=int,
+        choices=[0, 1],
+        default=1,
+        help=(
+            "Whether to apply LayerNorm after time-domain pooling. "
+            "Use 1 for the paper text setting."
         ),
     )
 
