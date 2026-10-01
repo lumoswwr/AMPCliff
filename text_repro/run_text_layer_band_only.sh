@@ -9,7 +9,7 @@ export PYTHONPATH="${REPO_ROOT}:${PARENT_DIR}:${REPO_ROOT}/text_repro${PYTHONPAT
 
 SEED="${SEED:-0}"
 STSB_CKPT="${STSB_CKPT:-outputs/text/stsbenchmark/experiments/stsb_frozen_flag/seed_${SEED}/best_model.pt}"
-SPRINT_CKPT="${SPRINT_CKPT:-outputs/text/sprintduplicatequestions/experiments/sprint_frozen_flag/seed_${SEED}/best_model.pt"
+SPRINT_CKPT="${SPRINT_CKPT:-outputs/text/sprintduplicatequestions/experiments/sprint_frozen_flag/seed_${SEED}/best_model.pt}"
 STSB_SPLIT="${STSB_SPLIT:-test}"
 SPRINT_SPLIT="${SPRINT_SPLIT:-validation}"
 BATCH_SIZE="${BATCH_SIZE:-64}"
