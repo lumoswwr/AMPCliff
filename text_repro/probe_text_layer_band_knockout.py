@@ -23,7 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -35,11 +35,11 @@ from sklearn.metrics import average_precision_score
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
-from spectrual_filter.filter_seq import (
-    allocate_prism_bands,
-    dct_ortho,
-    idct_ortho,
-)
+# Keep this probe self-contained instead of importing
+# spectrual_filter/filter_seq.py. The original AMP helper imports torch_dct
+# unconditionally, but torch_dct is not listed in this repository's
+# environment.yaml / requirements snapshot. We implement the same orthonormal
+# DCT-II / inverse transform directly in PyTorch below.
 from train_sts import (
     STSCollator,
     STSDataset,
@@ -51,6 +51,219 @@ from train_sprint import (
     SprintDataset,
     SprintPairClassifier,
 )
+
+
+
+_DCT_MATRIX_CACHE: Dict[Tuple[int, str, int, torch.dtype], torch.Tensor] = {}
+
+
+def _device_key(device: torch.device) -> Tuple[str, int]:
+    return (
+        device.type,
+        -1 if device.index is None else int(device.index),
+    )
+
+
+def dct_matrix_ortho(
+    n: int,
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """
+    Orthonormal DCT-II matrix C with:
+        X = C @ x
+        x = C.T @ X
+
+    C[0, :] = 1 / sqrt(n), so the first coefficient is exactly
+    sqrt(n) * mean(x), i.e. the DC/global-mean component up to scale.
+    """
+    dev_type, dev_index = _device_key(device)
+    key = (int(n), dev_type, dev_index, dtype)
+
+    cached = _DCT_MATRIX_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    # Build in float64 for accurate basis construction, then cast.
+    k = torch.arange(
+        n,
+        device=device,
+        dtype=torch.float64,
+    ).unsqueeze(1)
+    t = torch.arange(
+        n,
+        device=device,
+        dtype=torch.float64,
+    ).unsqueeze(0)
+
+    basis = torch.cos(
+        torch.pi
+        / float(n)
+        * (t + 0.5)
+        * k
+    )
+
+    scale = torch.full(
+        (n, 1),
+        (2.0 / float(n)) ** 0.5,
+        device=device,
+        dtype=torch.float64,
+    )
+    scale[0, 0] = (1.0 / float(n)) ** 0.5
+
+    matrix = (basis * scale).to(dtype=dtype)
+    _DCT_MATRIX_CACHE[key] = matrix
+    return matrix
+
+
+def dct_ortho(
+    x: torch.Tensor,
+    dim: int = -1,
+) -> torch.Tensor:
+    if dim < 0:
+        dim += x.dim()
+
+    moved = x.movedim(dim, -1)
+    n = moved.size(-1)
+    matrix = dct_matrix_ortho(
+        n,
+        device=x.device,
+        dtype=x.dtype,
+    )
+
+    # (..., n) @ C.T -> (..., n)
+    transformed = torch.matmul(
+        moved,
+        matrix.transpose(0, 1),
+    )
+    return transformed.movedim(-1, dim)
+
+
+def idct_ortho(
+    x: torch.Tensor,
+    dim: int = -1,
+) -> torch.Tensor:
+    if dim < 0:
+        dim += x.dim()
+
+    moved = x.movedim(dim, -1)
+    n = moved.size(-1)
+    matrix = dct_matrix_ortho(
+        n,
+        device=x.device,
+        dtype=x.dtype,
+    )
+
+    # Orthonormal inverse: (..., n) @ C
+    reconstructed = torch.matmul(
+        moved,
+        matrix,
+    )
+    return reconstructed.movedim(-1, dim)
+
+
+def allocate_prism_bands(
+    n: int,
+    k: int = 5,
+    base: int = 4,
+):
+    """
+    Exact copy of the AMP Prism band-allocation rule, kept local so this
+    analysis does not depend on torch_dct.
+    """
+    assert n >= k >= 1
+
+    sizes = torch.ones(k, dtype=torch.long)
+    remaining = n - k
+
+    i = torch.arange(k, dtype=torch.float32)
+    weights = base ** i
+    frac = remaining * (weights / weights.sum())
+    floor = torch.floor(frac).to(torch.long)
+    sizes += floor
+
+    left = int(remaining - int(floor.sum()))
+    residual = (frac - floor.float()).tolist()
+    order = sorted(
+        range(k),
+        key=lambda idx: residual[idx],
+        reverse=True,
+    )
+
+    for j in range(left):
+        sizes[order[j]] += 1
+
+    ends = torch.cumsum(sizes, dim=0)
+    starts = torch.cat(
+        [
+            torch.tensor([0], dtype=torch.long),
+            ends[:-1],
+        ]
+    )
+
+    masks = []
+    for start, end in zip(
+        starts.tolist(),
+        ends.tolist(),
+    ):
+        mask = torch.zeros(n)
+        mask[start:end] = 1.0
+        masks.append(mask)
+
+    return masks, sizes, starts, ends
+
+
+def dct_self_check(device: torch.device) -> Dict[str, float]:
+    """
+    Validate the local DCT before running the expensive 12x8 grid:
+    1) DCT -> IDCT reconstructs the input.
+    2) coefficient 0 equals sqrt(T) * token mean.
+    """
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(1234)
+
+    x = torch.randn(
+        3,
+        17,
+        11,
+        generator=generator,
+        dtype=torch.float32,
+    ).to(device)
+
+    coeff = dct_ortho(x, dim=1)
+    recon = idct_ortho(coeff, dim=1)
+
+    recon_error = float(
+        (recon - x).abs().max().detach().cpu()
+    )
+
+    expected_dc = (
+        x.mean(dim=1)
+        * (x.size(1) ** 0.5)
+    )
+    dc_error = float(
+        (
+            coeff[:, 0, :]
+            - expected_dc
+        )
+        .abs()
+        .max()
+        .detach()
+        .cpu()
+    )
+
+    if recon_error > 1e-4 or dc_error > 1e-4:
+        raise RuntimeError(
+            "Local orthonormal DCT self-check failed: "
+            f"reconstruction_error={recon_error:.3e}, "
+            f"dc_error={dc_error:.3e}"
+        )
+
+    return {
+        "max_reconstruction_error": recon_error,
+        "max_dc_equivalence_error": dc_error,
+    }
 
 
 def load_config(checkpoint: Path) -> Dict[str, object]:
@@ -255,7 +468,7 @@ def eval_stsb(
     model: SentenceEncoder,
     loader: DataLoader,
     device: torch.device,
-    knockout: LayerBandKnockout | None = None,
+    knockout: Optional[LayerBandKnockout] = None,
 ) -> Dict[str, float]:
     model.eval()
     preds: List[float] = []
@@ -293,7 +506,7 @@ def eval_sprint(
     model: SprintPairClassifier,
     loader: DataLoader,
     device: torch.device,
-    knockout: LayerBandKnockout | None = None,
+    knockout: Optional[LayerBandKnockout] = None,
 ) -> Dict[str, float]:
     model.eval()
     cosines: List[float] = []
@@ -651,7 +864,14 @@ def main() -> None:
         exist_ok=True,
     )
 
+    dct_check = dct_self_check(device)
+
     print("device:", device)
+    print(
+        "DCT self-check:",
+        f"recon_max={dct_check['max_reconstruction_error']:.3e}",
+        f"dc_max={dct_check['max_dc_equivalence_error']:.3e}",
+    )
     print("k_bands:", args.k_bands)
     print("base:", args.base)
     print("preserve_norm:", bool(args.preserve_norm))
@@ -747,6 +967,11 @@ def main() -> None:
         "k_bands": args.k_bands,
         "base": args.base,
         "preserve_norm": bool(args.preserve_norm),
+        "dct_backend": (
+            "self-contained orthonormal DCT-II matrix in PyTorch; "
+            "avoids undeclared torch_dct dependency"
+        ),
+        "dct_self_check": dct_check,
         "short_sequence_fallback": (
             "For valid token length < k_bands only, coefficient j is "
             "assigned to floor(j*k_bands/length); DC remains B0. "
