@@ -793,7 +793,7 @@ def train(args):
         print("- frozen RoBERTa-base")
         print("- train pooling + monotone cosine-logit head")
     print("- BCEWithLogitsLoss")
-    print("- checkpoint criterion: validation accuracy")
+    print("- checkpoint criterion:", args.checkpoint_metric)
     print("- official test evaluated only after checkpoint selection")
 
     if args.pooling == "FLaG":
@@ -1199,7 +1199,9 @@ def train(args):
 
     criterion = nn.BCEWithLogitsLoss()
 
+    best_selection_score = -float("inf")
     best_val_accuracy = -1.0
+    best_val_ap = -1.0
     best_epoch = None
 
     history = []
@@ -1352,17 +1354,26 @@ def train(args):
             f"bias={float(model.head.bias.detach().cpu()):.6f}\n"
         )
 
-        # Checkpoint selection follows validation accuracy after calibrating
-        # the threshold on validation. Strictly greater keeps the earliest
-        # checkpoint on ties. No test labels are used.
-        if (
-            val_best_acc
-            > best_val_accuracy
-        ):
-            best_val_accuracy = (
-                val_best_acc
+        # The published frozen-backbone Sprint protocol selects by
+        # validation accuracy. For the optional unfrozen-backbone mechanism
+        # control we can instead select by validation AP, which is much less
+        # misleading under the ~1% positive class imbalance. Strictly greater
+        # keeps the earliest checkpoint on ties. No test labels are used.
+        if args.checkpoint_metric == "accuracy":
+            selection_score = val_best_acc
+        elif args.checkpoint_metric == "ap":
+            selection_score = val_metrics["average_precision"]
+        else:
+            raise ValueError(
+                f"Unknown checkpoint metric: {args.checkpoint_metric}"
             )
 
+        if selection_score > best_selection_score:
+            best_selection_score = float(selection_score)
+            best_val_accuracy = float(val_best_acc)
+            best_val_ap = float(
+                val_metrics["average_precision"]
+            )
             best_epoch = epoch
 
             torch.save(
@@ -1371,8 +1382,14 @@ def train(args):
                         model.state_dict(),
                     "epoch":
                         epoch,
+                    "checkpoint_metric":
+                        args.checkpoint_metric,
+                    "selection_score":
+                        best_selection_score,
                     "val_accuracy":
                         best_val_accuracy,
+                    "val_average_precision":
+                        best_val_ap,
                     "val_accuracy_threshold":
                         val_acc_threshold,
                     "val_f1_threshold":
@@ -1386,6 +1403,8 @@ def train(args):
             print(
                 "Saved new best checkpoint:",
                 best_path,
+                f"(metric={args.checkpoint_metric}, "
+                f"score={best_selection_score:.6f})",
             )
 
     checkpoint = torch.load(
@@ -1469,7 +1488,10 @@ def train(args):
         "seed": args.seed,
         "pooling": args.pooling,
         "best_epoch": best_epoch,
+        "checkpoint_metric": args.checkpoint_metric,
+        "best_selection_score": best_selection_score,
         "best_val_accuracy": best_val_accuracy,
+        "best_val_average_precision": best_val_ap,
         "val_accuracy_threshold": val_accuracy_threshold,
         "val_f1_threshold": val_f1_threshold,
         "final_val_average_precision":
@@ -1675,6 +1697,20 @@ def main():
         help=(
             "Mechanism-control ablation: unfreeze RoBERTa. "
             "Default remains the published frozen-backbone protocol."
+        ),
+    )
+
+    parser.add_argument(
+        "--checkpoint_metric",
+        choices=[
+            "accuracy",
+            "ap",
+        ],
+        default="accuracy",
+        help=(
+            "Checkpoint selection metric. Keep accuracy for the published "
+            "frozen Sprint protocol; use ap for the unfrozen-backbone "
+            "mechanism control on this highly imbalanced dataset."
         ),
     )
 
