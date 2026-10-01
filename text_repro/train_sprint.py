@@ -135,16 +135,20 @@ class SprintEncoder(nn.Module):
         stft_hop_length=16,
         stft_window_type="rect",
         stft_center=False,
+        finetune_backbone=False,
     ):
         super().__init__()
+
+        self.finetune_backbone = bool(finetune_backbone)
 
         self.backbone = AutoModel.from_pretrained(
             model_path,
             local_files_only=True,
         )
 
-        for param in self.backbone.parameters():
-            param.requires_grad = False
+        if not self.finetune_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
 
         d_model = self.backbone.config.hidden_size
 
@@ -255,9 +259,12 @@ class SprintEncoder(nn.Module):
     def train(self, mode=True):
         super().train(mode)
 
-        # The paper specifies a frozen RoBERTa backbone for Sprint.
-        # Keep it in eval mode as a deterministic frozen feature extractor.
-        self.backbone.eval()
+        # Published Sprint protocol keeps RoBERTa frozen. The optional
+        # finetune_backbone flag is a mechanism-control ablation only.
+        if self.finetune_backbone:
+            self.backbone.train(mode)
+        else:
+            self.backbone.eval()
 
         return self
 
@@ -271,11 +278,14 @@ class SprintEncoder(nn.Module):
                     dim=0,
                 )
 
-        self.backbone.eval()
-
-        with torch.no_grad():
+        if self.finetune_backbone:
             outputs = self.backbone(**combined)
             hidden = outputs.last_hidden_state
+        else:
+            self.backbone.eval()
+            with torch.no_grad():
+                outputs = self.backbone(**combined)
+                hidden = outputs.last_hidden_state
 
         batch_size = tokens1["input_ids"].size(0)
 
@@ -364,6 +374,7 @@ class SprintPairClassifier(nn.Module):
         stft_hop_length=16,
         stft_window_type="rect",
         stft_center=False,
+        finetune_backbone=False,
     ):
         super().__init__()
 
@@ -374,6 +385,7 @@ class SprintPairClassifier(nn.Module):
             stft_hop_length=stft_hop_length,
             stft_window_type=stft_window_type,
             stft_center=stft_center,
+            finetune_backbone=finetune_backbone,
         )
 
         self.head = CosineLogitHead()
@@ -773,8 +785,13 @@ def train(args):
     print("pooling:", args.pooling)
 
     print("\nSprint protocol:")
-    print("- frozen RoBERTa-base")
-    print("- train pooling + monotone cosine-logit head")
+    if args.finetune_backbone:
+        print("- CONTROL: fine-tuned RoBERTa-base backbone")
+        print("- train backbone + pooling + monotone cosine-logit head")
+        print("- backbone LR:", args.backbone_lr)
+    else:
+        print("- frozen RoBERTa-base")
+        print("- train pooling + monotone cosine-logit head")
     print("- BCEWithLogitsLoss")
     print("- checkpoint criterion: validation accuracy")
     print("- official test evaluated only after checkpoint selection")
@@ -921,6 +938,7 @@ def train(args):
         stft_hop_length=args.stft_hop_length,
         stft_window_type=args.stft_window_type,
         stft_center=args.stft_center,
+        finetune_backbone=args.finetune_backbone,
     ).to(device)
 
     total_params = sum(
@@ -975,9 +993,58 @@ def train(args):
         ),
     )
 
-    if backbone_trainable != 0:
-        raise RuntimeError(
-            "RoBERTa backbone must be frozen for Sprint."
+    if args.finetune_backbone:
+        if backbone_trainable == 0:
+            raise RuntimeError(
+                "Fine-tune control requested but backbone has no trainable parameters."
+            )
+
+        backbone_params = [
+            p for p in model.backbone.parameters()
+            if p.requires_grad
+        ]
+
+        non_backbone_params = [
+            p
+            for name, p in model.named_parameters()
+            if p.requires_grad
+            and not name.startswith("encoder.backbone.")
+        ]
+
+        parameter_groups = [
+            {
+                "params": backbone_params,
+                "lr": args.backbone_lr,
+                "weight_decay": args.weight_decay,
+            },
+            {
+                "params": non_backbone_params,
+                "lr": args.learning_rate,
+                "weight_decay": args.weight_decay,
+            },
+        ]
+
+        optimizer = torch.optim.AdamW(
+            parameter_groups,
+            eps=1e-8,
+        )
+    else:
+        if backbone_trainable != 0:
+            raise RuntimeError(
+                "RoBERTa backbone must be frozen for published Sprint protocol."
+            )
+
+        trainable = [
+            p
+            for p in model.parameters()
+            if p.requires_grad
+        ]
+
+        optimizer = torch.optim.AdamW(
+            trainable,
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
+            eps=1e-8,
         )
 
     trainable = [
@@ -985,13 +1052,6 @@ def train(args):
         for p in model.parameters()
         if p.requires_grad
     ]
-
-    optimizer = torch.optim.AdamW(
-        trainable,
-        lr=args.learning_rate,
-        weight_decay=args.weight_decay,
-        eps=1e-8,
-    )
 
     if args.experiment_name is None:
         run_dir = (
@@ -1018,6 +1078,19 @@ def train(args):
     )
 
     config = vars(args).copy()
+
+    config["mechanism_control"] = {
+        "finetune_backbone": bool(args.finetune_backbone),
+        "backbone_lr": (
+            float(args.backbone_lr)
+            if args.finetune_backbone
+            else None
+        ),
+        "note": (
+            "Optional backbone-finetuning control; not part of the "
+            "published frozen-backbone Sprint protocol."
+        ),
+    }
 
     config["protocol_notes"] = {
         "paper_specified": {
@@ -1594,6 +1667,24 @@ def main():
         "--learning_rate",
         type=float,
         default=1e-3,
+    )
+
+    parser.add_argument(
+        "--finetune_backbone",
+        action="store_true",
+        help=(
+            "Mechanism-control ablation: unfreeze RoBERTa. "
+            "Default remains the published frozen-backbone protocol."
+        ),
+    )
+
+    parser.add_argument(
+        "--backbone_lr",
+        type=float,
+        default=1e-5,
+        help=(
+            "RoBERTa learning rate used only with --finetune_backbone."
+        ),
     )
 
     # Not reported for Sprint. Keep explicit and recorded.
