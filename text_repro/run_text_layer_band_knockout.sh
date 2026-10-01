@@ -4,8 +4,8 @@ set -euo pipefail
 # First-pass text layer x frequency-band knockout.
 #
 # Uses seed 0 by default.
-# STS-B: task-finetuned FLaG checkpoint, test split.
-# Sprint: published frozen-backbone FLaG checkpoint, validation split first
+# STS-B: frozen-backbone FLaG checkpoint, test split.
+# Sprint: frozen-backbone FLaG checkpoint, validation split first
 #         because the official test is ~10x larger. After the heatmap passes
 #         sanity checks, rerun with SPRINT_SPLIT=test for the final version.
 
