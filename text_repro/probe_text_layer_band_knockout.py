@@ -611,12 +611,19 @@ def build_stsb(
             f"STS-B checkpoint must be FLaG, got pooling={pooling}"
         )
 
+    if not bool(config.get("freeze_backbone", False)):
+        raise ValueError(
+            "Frozen-only knockout report requires an STS-B checkpoint "
+            "trained with --freeze_backbone."
+        )
+
     model = SentenceEncoder(
         model_path=str(model_path),
         pooling="FLaG",
         fixed_fft_length=config.get("fixed_fft_length"),
         pool_dropout=float(config.get("pool_dropout", 0.0)),
         post_pool_norm=bool(int(config.get("post_pool_norm", 1))),
+        freeze_backbone=True,
     ).to(device)
 
     meta = load_state(model, checkpoint)
@@ -1085,7 +1092,7 @@ def main() -> None:
             "checkpoint": str(args.stsb_checkpoint),
             "checkpoint_meta": stsb_meta,
             "training_protocol": (
-                "task-finetuned RoBERTa backbone + trained FLaG"
+                "pretrained/frozen RoBERTa backbone + trained FLaG"
             ),
             "config": stsb_config,
         },
