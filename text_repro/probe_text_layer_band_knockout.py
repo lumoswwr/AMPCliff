@@ -296,59 +296,34 @@ def load_sprint_state_for_cosine_probe(
     checkpoint: Path,
 ) -> Dict[str, object]:
     """
-    Sprint historical checkpoints exist with two lightweight-head formats:
+    Main Sprint knockout must use the audited frozen-FLaG checkpoint format.
 
-      legacy:   head.linear.weight / head.linear.bias
-      current:  head.raw_scale / head.bias
-
-    The knockout metric is cosine AP, so the calibration head is not used at
-    all. Load backbone + FLaG strictly in spirit, while allowing only this
-    known head-format mismatch. Any other missing/unexpected key is fatal.
+    Historical sprint_flag checkpoints used an older free Linear head and are
+    not interchangeable with the canonical monotone-cosine reproduction.
+    Refuse those checkpoints instead of silently bypassing the mismatch.
     """
     payload = torch.load(checkpoint, map_location="cpu")
     state = payload.get("model_state_dict", payload)
 
-    incompatible = model.load_state_dict(
-        state,
-        strict=False,
-    )
-
-    allowed_missing = {
-        "head.raw_scale",
-        "head.bias",
-    }
-    allowed_unexpected = {
-        "head.linear.weight",
-        "head.linear.bias",
-    }
-
-    bad_missing = set(incompatible.missing_keys) - allowed_missing
-    bad_unexpected = (
-        set(incompatible.unexpected_keys)
-        - allowed_unexpected
-    )
-
-    if bad_missing or bad_unexpected:
-        raise RuntimeError(
-            "Sprint checkpoint mismatch outside the known calibration-head "
-            "format difference. "
-            f"bad_missing={sorted(bad_missing)}, "
-            f"bad_unexpected={sorted(bad_unexpected)}"
+    try:
+        model.load_state_dict(
+            state,
+            strict=True,
         )
-
-    if incompatible.missing_keys or incompatible.unexpected_keys:
-        print(
-            "[sprint] checkpoint uses legacy calibration head; "
-            "backbone + FLaG loaded, head ignored for cosine-AP knockout."
-        )
-        print(
-            "[sprint] allowed missing keys:",
-            sorted(incompatible.missing_keys),
-        )
-        print(
-            "[sprint] allowed unexpected keys:",
-            sorted(incompatible.unexpected_keys),
-        )
+    except RuntimeError as exc:
+        keys = set(state.keys())
+        if (
+            "head.linear.weight" in keys
+            or "head.linear.bias" in keys
+        ):
+            raise RuntimeError(
+                "This is a legacy Sprint checkpoint with head.linear.*. "
+                "Do NOT use it for the main layer-band knockout. "
+                "Use the audited canonical checkpoint under "
+                "experiments/sprint_frozen_flag/seed_0/best_model.pt, "
+                "whose validation cosine AP is ~0.758 for seed 0."
+            ) from exc
+        raise
 
     meta = checkpoint_meta(checkpoint)
     meta["head_used_for_metric"] = False
@@ -750,6 +725,17 @@ def run_grid(
         baseline = baseline_metrics["average_precision"]
         metric_name = "average_precision"
         evaluator = eval_sprint
+
+        # The audited seed-0 frozen-FLaG reproduction has validation cosine
+        # AP ~= 0.758. A near-random baseline (~0.01-0.03 on this 1% positive
+        # task) signals a wrong/legacy checkpoint or architecture mismatch.
+        if baseline < 0.20:
+            raise RuntimeError(
+                "Sprint baseline cosine AP is implausibly low "
+                f"({baseline:.6f}). Stop before running the 12x8 grid. "
+                "For the main experiment use "
+                "experiments/sprint_frozen_flag/seed_0/best_model.pt."
+            )
     else:
         raise ValueError(dataset)
 
