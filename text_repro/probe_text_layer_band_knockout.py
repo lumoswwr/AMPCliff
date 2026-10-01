@@ -274,16 +274,86 @@ def load_config(checkpoint: Path) -> Dict[str, object]:
         return json.load(f)
 
 
-def load_state(model: torch.nn.Module, checkpoint: Path) -> Dict[str, object]:
+def checkpoint_meta(checkpoint: Path) -> Dict[str, object]:
     payload = torch.load(checkpoint, map_location="cpu")
-    state = payload.get("model_state_dict", payload)
-    model.load_state_dict(state, strict=True)
     return {
         "epoch": payload.get("epoch"),
         "val_spearman": payload.get("val_spearman"),
         "val_accuracy": payload.get("val_accuracy"),
         "val_average_precision": payload.get("val_average_precision"),
     }
+
+
+def load_state(model: torch.nn.Module, checkpoint: Path) -> Dict[str, object]:
+    payload = torch.load(checkpoint, map_location="cpu")
+    state = payload.get("model_state_dict", payload)
+    model.load_state_dict(state, strict=True)
+    return checkpoint_meta(checkpoint)
+
+
+def load_sprint_state_for_cosine_probe(
+    model: torch.nn.Module,
+    checkpoint: Path,
+) -> Dict[str, object]:
+    """
+    Sprint historical checkpoints exist with two lightweight-head formats:
+
+      legacy:   head.linear.weight / head.linear.bias
+      current:  head.raw_scale / head.bias
+
+    The knockout metric is cosine AP, so the calibration head is not used at
+    all. Load backbone + FLaG strictly in spirit, while allowing only this
+    known head-format mismatch. Any other missing/unexpected key is fatal.
+    """
+    payload = torch.load(checkpoint, map_location="cpu")
+    state = payload.get("model_state_dict", payload)
+
+    incompatible = model.load_state_dict(
+        state,
+        strict=False,
+    )
+
+    allowed_missing = {
+        "head.raw_scale",
+        "head.bias",
+    }
+    allowed_unexpected = {
+        "head.linear.weight",
+        "head.linear.bias",
+    }
+
+    bad_missing = set(incompatible.missing_keys) - allowed_missing
+    bad_unexpected = (
+        set(incompatible.unexpected_keys)
+        - allowed_unexpected
+    )
+
+    if bad_missing or bad_unexpected:
+        raise RuntimeError(
+            "Sprint checkpoint mismatch outside the known calibration-head "
+            "format difference. "
+            f"bad_missing={sorted(bad_missing)}, "
+            f"bad_unexpected={sorted(bad_unexpected)}"
+        )
+
+    if incompatible.missing_keys or incompatible.unexpected_keys:
+        print(
+            "[sprint] checkpoint uses legacy calibration head; "
+            "backbone + FLaG loaded, head ignored for cosine-AP knockout."
+        )
+        print(
+            "[sprint] allowed missing keys:",
+            sorted(incompatible.missing_keys),
+        )
+        print(
+            "[sprint] allowed unexpected keys:",
+            sorted(incompatible.unexpected_keys),
+        )
+
+    meta = checkpoint_meta(checkpoint)
+    meta["head_used_for_metric"] = False
+    meta["metric_path"] = "encoder -> cosine -> AP"
+    return meta
 
 
 def text_band_mask(
@@ -528,7 +598,15 @@ def eval_sprint(
                 tok2["attention_mask"],
             )
 
-        _, cosine = model(tok1, tok2)
+        # Bypass the calibration head entirely. Sprint knockout is evaluated
+        # with cosine AP, which is exactly the ranking quantity of interest
+        # and is invariant to a positive affine calibration head.
+        z1, z2 = model.encoder(tok1, tok2)
+        cosine = F.cosine_similarity(
+            z1,
+            z2,
+            dim=-1,
+        )
 
         cosines.extend(
             cosine.detach().cpu().numpy().tolist()
@@ -594,7 +672,10 @@ def build_sprint(
         finetune_backbone=False,
     ).to(device)
 
-    meta = load_state(model, checkpoint)
+    meta = load_sprint_state_for_cosine_probe(
+        model,
+        checkpoint,
+    )
     return model, config, meta
 
 
@@ -846,6 +927,14 @@ def main() -> None:
             "outputs/text/layer_band_knockout"
         ),
     )
+    parser.add_argument(
+        "--skip_stsb",
+        action="store_true",
+        help=(
+            "Reuse an already completed stsb_layer_band_knockout.csv "
+            "from output_dir and run only Sprint."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -883,13 +972,6 @@ def main() -> None:
         local_files_only=True,
     )
 
-    stsb_loader, stsb_n = make_stsb_loader(
-        tokenizer,
-        args.stsb_data_path,
-        args.stsb_split,
-        args.batch_size,
-        args.max_length,
-    )
     sprint_loader, sprint_n = make_sprint_loader(
         tokenizer,
         args.sprint_data_path,
@@ -898,33 +980,66 @@ def main() -> None:
         args.max_length,
     )
 
-    stsb_model, stsb_config, stsb_meta = build_stsb(
-        args.model_path,
-        args.stsb_checkpoint,
-        device,
-    )
-    stsb_df = run_grid(
-        dataset="stsb",
-        model=stsb_model,
-        loader=stsb_loader,
-        device=device,
-        k_bands=args.k_bands,
-        base=args.base,
-        preserve_norm=bool(args.preserve_norm),
-    )
-    stsb_df.to_csv(
-        args.output_dir / "stsb_layer_band_knockout.csv",
-        index=False,
-    )
-    plot_heatmap(
-        stsb_df,
-        dataset="stsb",
-        output=args.output_dir / "stsb_layer_band_knockout",
+    stsb_csv = (
+        args.output_dir
+        / "stsb_layer_band_knockout.csv"
     )
 
-    del stsb_model
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    if args.skip_stsb:
+        if not stsb_csv.is_file():
+            raise FileNotFoundError(
+                "--skip_stsb requested, but completed STS-B CSV "
+                f"was not found: {stsb_csv}"
+            )
+
+        print(
+            "[stsb] reusing completed results:",
+            stsb_csv,
+        )
+        stsb_df = pd.read_csv(stsb_csv)
+        stsb_config = load_config(args.stsb_checkpoint)
+        stsb_meta = checkpoint_meta(args.stsb_checkpoint)
+        stsb_n = int(
+            load_from_disk(
+                str(args.stsb_data_path)
+            )[args.stsb_split].num_rows
+        )
+    else:
+        stsb_loader, stsb_n = make_stsb_loader(
+            tokenizer,
+            args.stsb_data_path,
+            args.stsb_split,
+            args.batch_size,
+            args.max_length,
+        )
+
+        stsb_model, stsb_config, stsb_meta = build_stsb(
+            args.model_path,
+            args.stsb_checkpoint,
+            device,
+        )
+        stsb_df = run_grid(
+            dataset="stsb",
+            model=stsb_model,
+            loader=stsb_loader,
+            device=device,
+            k_bands=args.k_bands,
+            base=args.base,
+            preserve_norm=bool(args.preserve_norm),
+        )
+        stsb_df.to_csv(
+            stsb_csv,
+            index=False,
+        )
+        plot_heatmap(
+            stsb_df,
+            dataset="stsb",
+            output=args.output_dir / "stsb_layer_band_knockout",
+        )
+
+        del stsb_model
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     sprint_model, sprint_config, sprint_meta = build_sprint(
         args.model_path,
