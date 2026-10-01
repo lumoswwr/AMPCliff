@@ -141,13 +141,20 @@ class SentenceEncoder(nn.Module):
         fixed_fft_length=None,
         pool_dropout=0.0,
         post_pool_norm=True,
+        freeze_backbone=False,
     ):
         super().__init__()
+
+        self.freeze_backbone = bool(freeze_backbone)
 
         self.backbone = AutoModel.from_pretrained(
             model_path,
             local_files_only=True,
         )
+
+        if self.freeze_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
 
         d_model = self.backbone.config.hidden_size
         if pooling == "mean":
@@ -208,8 +215,26 @@ class SentenceEncoder(nn.Module):
         
         self.pooling_name = pooling
 
+    def train(self, mode=True):
+        super().train(mode)
+
+        if self.freeze_backbone:
+            self.backbone.eval()
+        else:
+            self.backbone.train(mode)
+
+        return self
+
+    def _backbone_forward(self, tokens):
+        if self.freeze_backbone:
+            self.backbone.eval()
+            with torch.no_grad():
+                return self.backbone(**tokens)
+
+        return self.backbone(**tokens)
+
     def encode(self, tokens):
-        outputs = self.backbone(**tokens)
+        outputs = self._backbone_forward(tokens)
 
         hidden = outputs.last_hidden_state
 
@@ -231,7 +256,7 @@ class SentenceEncoder(nn.Module):
                     dim=0,
                 )
 
-        outputs = self.backbone(**combined)
+        outputs = self._backbone_forward(combined)
 
         hidden = outputs.last_hidden_state
 
@@ -323,6 +348,7 @@ def train(args):
     print("device:", device)
     print("seed:", args.seed)
     print("pooling:", args.pooling)
+    print("freeze_backbone:", args.freeze_backbone)
 
     # -----------------------------------------------------
     # Data
@@ -401,6 +427,7 @@ def train(args):
         fixed_fft_length=args.fixed_fft_length,
         pool_dropout=args.pool_dropout,
         post_pool_norm=bool(args.post_pool_norm),
+        freeze_backbone=args.freeze_backbone,
     ).to(device)
 
     print("\nBackbone hidden size:",
@@ -423,13 +450,19 @@ def train(args):
     # Differential learning rates
     # -----------------------------------------------------
 
-    parameter_groups = [
-        {
-            "params": model.backbone.parameters(),
+    parameter_groups = []
+
+    backbone_params = [
+        p for p in model.backbone.parameters()
+        if p.requires_grad
+    ]
+
+    if backbone_params:
+        parameter_groups.append({
+            "params": backbone_params,
             "lr": args.backbone_lr,
             "weight_decay": args.weight_decay,
-        }
-    ]
+        })
 
     pool_params = [
         p for p in model.pool.parameters()
@@ -442,6 +475,12 @@ def train(args):
             "lr": args.pool_lr,
             "weight_decay": args.weight_decay,
         })
+
+    if not parameter_groups:
+        raise RuntimeError(
+            "No trainable parameters. Frozen-backbone STSB requires "
+            "a trainable pooling module such as FLaG."
+        )
 
     optimizer = torch.optim.AdamW(
         parameter_groups,
@@ -817,6 +856,16 @@ def main():
         "--backbone_lr",
         type=float,
         default=1e-5,
+    )
+
+    parser.add_argument(
+        "--freeze_backbone",
+        action="store_true",
+        help=(
+            "Keep pretrained RoBERTa fixed and train only the pooling "
+            "module. This is a mechanism-control setting for matched "
+            "frozen-backbone comparisons with Sprint."
+        ),
     )
 
     parser.add_argument(
