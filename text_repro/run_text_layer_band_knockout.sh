@@ -17,7 +17,7 @@ export PYTHONPATH="${REPO_ROOT}:${PARENT_DIR}:${REPO_ROOT}/text_repro${PYTHONPAT
 
 SEED="${SEED:-0}"
 STSB_FLAG_DIR="${STSB_FLAG_DIR:-outputs/text/stsbenchmark/FLaG}"
-SPRINT_FLAG_DIR="${SPRINT_FLAG_DIR:-outputs/text/sprintduplicatequestions/FLaG}"
+SPRINT_FLAG_DIR="${SPRINT_FLAG_DIR:-outputs/text/sprintduplicatequestions/experiments/sprint_frozen_flag}"
 STSB_SPLIT="${STSB_SPLIT:-test}"
 SPRINT_SPLIT="${SPRINT_SPLIT:-validation}"
 BATCH_SIZE="${BATCH_SIZE:-64}"
