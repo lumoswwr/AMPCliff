@@ -31,7 +31,7 @@ BATCH_SIZE="${BATCH_SIZE:-8}"
 EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-64}"
 BACKBONE_LR="${BACKBONE_LR:-1e-5}"
 HEAD_LR="${HEAD_LR:-1e-3}"
-EXPERIMENT_NAME="${EXPERIMENT_NAME:-sprint_mean_backbone_ft_control}"
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-sprint_mean_backbone_ft_ap_control}"
 OUTPUT_DIR="${OUTPUT_DIR:-/home/data/home/wwr_lumos/AMPCliff/outputs/text/sprintduplicatequestions}"
 
 echo "============================================================"
@@ -42,6 +42,7 @@ echo "Epochs       : ${EPOCHS}"
 echo "Batch size   : ${BATCH_SIZE}"
 echo "Backbone LR  : ${BACKBONE_LR}"
 echo "Head LR      : ${HEAD_LR}"
+echo "Checkpoint   : validation AP"
 echo "Experiment   : ${EXPERIMENT_NAME}"
 echo
 
@@ -51,6 +52,7 @@ for seed in ${SEEDS}; do
   python -u text_repro/train_sprint.py \
     --pooling mean \
     --finetune_backbone \
+    --checkpoint_metric ap \
     --backbone_lr "${BACKBONE_LR}" \
     --learning_rate "${HEAD_LR}" \
     --epochs "${EPOCHS}" \
