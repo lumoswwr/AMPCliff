@@ -14,7 +14,7 @@ set -euo pipefail
 #   EPOCHS=3
 #   BATCH_SIZE=8
 #   EVAL_BATCH_SIZE=64
-#   BACKBONE_LR=1e-5
+#   BACKBONE_LR=3e-6
 #   HEAD_LR=1e-3
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -29,9 +29,9 @@ SEEDS="${SEEDS:-0}"
 EPOCHS="${EPOCHS:-3}"
 BATCH_SIZE="${BATCH_SIZE:-8}"
 EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-64}"
-BACKBONE_LR="${BACKBONE_LR:-1e-5}"
+BACKBONE_LR="${BACKBONE_LR:-3e-6}"
 HEAD_LR="${HEAD_LR:-1e-3}"
-EXPERIMENT_NAME="${EXPERIMENT_NAME:-sprint_mean_backbone_ft_ap_control}"
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-sprint_mean_backbone_ft_ap_lr3e6_control}"
 OUTPUT_DIR="${OUTPUT_DIR:-/home/data/home/wwr_lumos/AMPCliff/outputs/text/sprintduplicatequestions}"
 
 echo "============================================================"
