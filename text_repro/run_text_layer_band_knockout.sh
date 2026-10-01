@@ -13,7 +13,7 @@ REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "${REPO_ROOT}"
 
 PARENT_DIR="$(dirname "${REPO_ROOT}")"
-export PYTHONPATH="${PARENT_DIR}:${REPO_ROOT}/text_repro${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONPATH="${REPO_ROOT}:${PARENT_DIR}:${REPO_ROOT}/text_repro${PYTHONPATH:+:${PYTHONPATH}}"
 
 SEED="${SEED:-0}"
 STSB_FLAG_DIR="${STSB_FLAG_DIR:-outputs/text/stsbenchmark/FLaG}"
