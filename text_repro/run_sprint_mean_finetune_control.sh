@@ -20,6 +20,11 @@ set -euo pipefail
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "${REPO_ROOT}"
 
+# train_sprint.py imports this repository as the top-level package "AMPCliff".
+# Therefore Python must see the directory containing the repo.
+PARENT_DIR="$(dirname "${REPO_ROOT}")"
+export PYTHONPATH="${PARENT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
+
 SEEDS="${SEEDS:-0}"
 EPOCHS="${EPOCHS:-3}"
 BATCH_SIZE="${BATCH_SIZE:-8}"
