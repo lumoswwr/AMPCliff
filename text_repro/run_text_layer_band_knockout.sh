@@ -16,13 +16,13 @@ PARENT_DIR="$(dirname "${REPO_ROOT}")"
 export PYTHONPATH="${REPO_ROOT}:${PARENT_DIR}:${REPO_ROOT}/text_repro${PYTHONPATH:+:${PYTHONPATH}}"
 
 SEED="${SEED:-0}"
-STSB_FLAG_DIR="${STSB_FLAG_DIR:-outputs/text/stsbenchmark/FLaG}"
+STSB_FLAG_DIR="${STSB_FLAG_DIR:-outputs/text/stsbenchmark/experiments/stsb_frozen_flag}"
 SPRINT_FLAG_DIR="${SPRINT_FLAG_DIR:-outputs/text/sprintduplicatequestions/experiments/sprint_frozen_flag}"
 STSB_SPLIT="${STSB_SPLIT:-test}"
 SPRINT_SPLIT="${SPRINT_SPLIT:-validation}"
 BATCH_SIZE="${BATCH_SIZE:-64}"
 SKIP_STSB="${SKIP_STSB:-0}"
-OUTPUT_DIR="${OUTPUT_DIR:-outputs/text/layer_band_knockout_seed${SEED}}"
+OUTPUT_DIR="${OUTPUT_DIR:-outputs/text/layer_band_knockout_frozen_seed${SEED}}"
 
 STSB_CKPT="${STSB_CKPT:-${STSB_FLAG_DIR}/seed_${SEED}/best_model.pt}"
 SPRINT_CKPT="${SPRINT_CKPT:-${SPRINT_FLAG_DIR}/seed_${SEED}/best_model.pt}"
@@ -40,7 +40,7 @@ if [[ ! -f "${SPRINT_CKPT}" ]]; then
 fi
 
 echo "============================================================"
-echo "Text FLaG layer x DCT-band knockout"
+echo "Text FLaG layer x DCT-band knockout (frozen backbones)"
 echo "============================================================"
 echo "STS-B checkpoint : ${STSB_CKPT}"
 echo "Sprint checkpoint: ${SPRINT_CKPT}"
