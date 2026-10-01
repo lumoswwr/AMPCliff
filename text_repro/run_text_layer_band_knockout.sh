@@ -21,6 +21,7 @@ SPRINT_FLAG_DIR="${SPRINT_FLAG_DIR:-outputs/text/sprintduplicatequestions/FLaG}"
 STSB_SPLIT="${STSB_SPLIT:-test}"
 SPRINT_SPLIT="${SPRINT_SPLIT:-validation}"
 BATCH_SIZE="${BATCH_SIZE:-64}"
+SKIP_STSB="${SKIP_STSB:-0}"
 OUTPUT_DIR="${OUTPUT_DIR:-outputs/text/layer_band_knockout_seed${SEED}}"
 
 STSB_CKPT="${STSB_CKPT:-${STSB_FLAG_DIR}/seed_${SEED}/best_model.pt}"
@@ -48,7 +49,13 @@ echo "Sprint split     : ${SPRINT_SPLIT}"
 echo "Bands            : 8"
 echo "Preserve norm    : true (AMP-compatible)"
 echo "Output           : ${OUTPUT_DIR}"
+echo "Skip completed STS-B: ${SKIP_STSB}"
 echo
+
+EXTRA_ARGS=()
+if [[ "${SKIP_STSB}" == "1" ]]; then
+  EXTRA_ARGS+=(--skip_stsb)
+fi
 
 python -u text_repro/probe_text_layer_band_knockout.py \
   --stsb_checkpoint "${STSB_CKPT}" \
@@ -59,4 +66,5 @@ python -u text_repro/probe_text_layer_band_knockout.py \
   --k_bands 8 \
   --base 4 \
   --preserve_norm 1 \
-  --output_dir "${OUTPUT_DIR}"
+  --output_dir "${OUTPUT_DIR}" \
+  "${EXTRA_ARGS[@]}"
