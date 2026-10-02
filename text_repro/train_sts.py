@@ -125,22 +125,6 @@ class MeanPooling(nn.Module):
         return summed / denom
 
 
-def remove_dc_component(features, attention_mask):
-    """
-    Remove the exact sequence DC component over valid tokens.
-
-    For each sample and hidden dimension:
-        H'_t = H_t - mean_valid(H)
-
-    Padding positions are zeroed. Therefore the sum over valid positions is
-    zero, so the k=0 coefficient seen by a subsequent FFT is exactly zero
-    up to floating-point error.
-    """
-    mask = attention_mask.unsqueeze(-1).to(features.dtype)
-    denom = mask.sum(dim=1, keepdim=True).clamp(min=1.0)
-    mean = (features * mask).sum(dim=1, keepdim=True) / denom
-    return (features - mean) * mask
-
 
 # ---------------------------------------------------------
 # RoBERTa + Pooling
@@ -200,6 +184,7 @@ class SentenceEncoder(nn.Module):
                 post_pool_norm=post_pool_norm,
                 window_type=window_type,
                 fixed_fft_length=fixed_fft_length,
+                remove_dc=remove_dc,
             )
         
         elif pooling in {
@@ -257,12 +242,6 @@ class SentenceEncoder(nn.Module):
 
         hidden = outputs.last_hidden_state
 
-        if self.remove_dc:
-            hidden = remove_dc_component(
-                hidden,
-                tokens["attention_mask"],
-            )
-
         embedding = self.pool(
             hidden,
             attention_mask=tokens["attention_mask"],
@@ -284,12 +263,6 @@ class SentenceEncoder(nn.Module):
         outputs = self._backbone_forward(combined)
 
         hidden = outputs.last_hidden_state
-
-        if self.remove_dc:
-            hidden = remove_dc_component(
-                hidden,
-                combined["attention_mask"],
-            )
 
         batch_size = tokens1["input_ids"].size(0)
 
@@ -916,9 +889,9 @@ def main():
         "--remove_dc",
         action="store_true",
         help=(
-            "Exact final-hidden-state DC ablation used throughout training "
-            "and evaluation. Subtract the masked token mean before FLaG, "
-            "making the valid-token k=0 FFT coefficient zero."
+            "Exact FLaG spectral DC ablation used throughout training and "
+            "evaluation. The actual rFFT k=0 coefficient is set to zero "
+            "after masking, leaving all non-DC coefficients unchanged."
         ),
     )
 
