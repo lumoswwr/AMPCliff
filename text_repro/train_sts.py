@@ -125,6 +125,23 @@ class MeanPooling(nn.Module):
         return summed / denom
 
 
+def remove_dc_component(features, attention_mask):
+    """
+    Remove the exact sequence DC component over valid tokens.
+
+    For each sample and hidden dimension:
+        H'_t = H_t - mean_valid(H)
+
+    Padding positions are zeroed. Therefore the sum over valid positions is
+    zero, so the k=0 coefficient seen by a subsequent FFT is exactly zero
+    up to floating-point error.
+    """
+    mask = attention_mask.unsqueeze(-1).to(features.dtype)
+    denom = mask.sum(dim=1, keepdim=True).clamp(min=1.0)
+    mean = (features * mask).sum(dim=1, keepdim=True) / denom
+    return (features - mean) * mask
+
+
 # ---------------------------------------------------------
 # RoBERTa + Pooling
 # ---------------------------------------------------------
@@ -142,10 +159,12 @@ class SentenceEncoder(nn.Module):
         pool_dropout=0.0,
         post_pool_norm=True,
         freeze_backbone=False,
+        remove_dc=False,
     ):
         super().__init__()
 
         self.freeze_backbone = bool(freeze_backbone)
+        self.remove_dc = bool(remove_dc)
 
         self.backbone = AutoModel.from_pretrained(
             model_path,
@@ -238,6 +257,12 @@ class SentenceEncoder(nn.Module):
 
         hidden = outputs.last_hidden_state
 
+        if self.remove_dc:
+            hidden = remove_dc_component(
+                hidden,
+                tokens["attention_mask"],
+            )
+
         embedding = self.pool(
             hidden,
             attention_mask=tokens["attention_mask"],
@@ -259,6 +284,12 @@ class SentenceEncoder(nn.Module):
         outputs = self._backbone_forward(combined)
 
         hidden = outputs.last_hidden_state
+
+        if self.remove_dc:
+            hidden = remove_dc_component(
+                hidden,
+                combined["attention_mask"],
+            )
 
         batch_size = tokens1["input_ids"].size(0)
 
@@ -349,6 +380,18 @@ def train(args):
     print("seed:", args.seed)
     print("pooling:", args.pooling)
     print("freeze_backbone:", args.freeze_backbone)
+    print("remove_dc:", args.remove_dc)
+
+    if args.remove_dc:
+        if args.pooling != "FLaG":
+            raise ValueError(
+                "--remove_dc is defined for the matched FLaG control only."
+            )
+        if not args.freeze_backbone:
+            raise ValueError(
+                "--remove_dc control requires --freeze_backbone so only "
+                "the pooling module can adapt around missing DC."
+            )
 
     # -----------------------------------------------------
     # Data
@@ -428,6 +471,7 @@ def train(args):
         pool_dropout=args.pool_dropout,
         post_pool_norm=bool(args.post_pool_norm),
         freeze_backbone=args.freeze_backbone,
+        remove_dc=args.remove_dc,
     ).to(device)
 
     print("\nBackbone hidden size:",
@@ -865,6 +909,16 @@ def main():
             "Keep pretrained RoBERTa fixed and train only the pooling "
             "module. This is a mechanism-control setting for matched "
             "frozen-backbone comparisons with Sprint."
+        ),
+    )
+
+    parser.add_argument(
+        "--remove_dc",
+        action="store_true",
+        help=(
+            "Exact final-hidden-state DC ablation used throughout training "
+            "and evaluation. Subtract the masked token mean before FLaG, "
+            "making the valid-token k=0 FFT coefficient zero."
         ),
     )
 
