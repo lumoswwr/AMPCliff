@@ -138,11 +138,13 @@ class SprintEncoder(nn.Module):
         stft_center=False,
         finetune_backbone=False,
         remove_dc=False,
+        dc_only=False,
     ):
         super().__init__()
 
         self.finetune_backbone = bool(finetune_backbone)
         self.remove_dc = bool(remove_dc)
+        self.dc_only = bool(dc_only)
 
         self.backbone = AutoModel.from_pretrained(
             model_path,
@@ -176,6 +178,7 @@ class SprintEncoder(nn.Module):
                 window_type=None,
                 fixed_fft_length=None,
                 remove_dc=remove_dc,
+                dc_only=dc_only,
             )
 
         elif pooling == "FLaG_PostNorm":
@@ -380,6 +383,7 @@ class SprintPairClassifier(nn.Module):
         stft_center=False,
         finetune_backbone=False,
         remove_dc=False,
+        dc_only=False,
     ):
         super().__init__()
 
@@ -392,6 +396,7 @@ class SprintPairClassifier(nn.Module):
             stft_center=stft_center,
             finetune_backbone=finetune_backbone,
             remove_dc=remove_dc,
+            dc_only=dc_only,
         )
 
         self.head = CosineLogitHead()
@@ -790,15 +795,21 @@ def train(args):
     print("seed:", args.seed)
     print("pooling:", args.pooling)
     print("remove_dc:", args.remove_dc)
+    print("dc_only:", args.dc_only)
 
-    if args.remove_dc:
+    if args.remove_dc and args.dc_only:
+        raise ValueError(
+            "--remove_dc and --dc_only are mutually exclusive."
+        )
+
+    if args.remove_dc or args.dc_only:
         if args.pooling != "FLaG":
             raise ValueError(
-                "--remove_dc is defined for the matched FLaG control only."
+                "DC spectral controls are defined for matched FLaG only."
             )
         if args.finetune_backbone:
             raise ValueError(
-                "--remove_dc control requires the frozen backbone protocol."
+                "DC spectral controls require the frozen backbone protocol."
             )
 
     print("\nSprint protocol:")
@@ -957,6 +968,7 @@ def train(args):
         stft_center=args.stft_center,
         finetune_backbone=args.finetune_backbone,
         remove_dc=args.remove_dc,
+        dc_only=args.dc_only,
     ).to(device)
 
     total_params = sum(
@@ -1725,6 +1737,16 @@ def main():
             "Exact FLaG spectral DC ablation used throughout training and "
             "evaluation. The actual rFFT k=0 coefficient is set to zero "
             "after masking, leaving all non-DC coefficients unchanged."
+        ),
+    )
+
+    parser.add_argument(
+        "--dc_only",
+        action="store_true",
+        help=(
+            "Exact FLaG spectral DC-only control used throughout training "
+            "and evaluation. Keep the actual rFFT k=0 coefficient and set "
+            "every k>0 coefficient to zero."
         ),
     )
 
