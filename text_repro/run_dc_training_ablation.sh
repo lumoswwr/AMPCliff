@@ -9,8 +9,8 @@ set -euo pipefail
 #
 # Controls:
 #   1) Full frozen FLaG: existing canonical checkpoints (not retrained here)
-#   2) No-DC FLaG: exact token-axis mean subtraction before FLaG at every
-#      training and evaluation forward
+#   2) No-DC FLaG: zero the actual rFFT k=0 coefficient inside FLaG at every
+#      training and evaluation forward; all k>0 coefficients stay unchanged
 #   3) DC-only: frozen RoBERTa + masked Mean pooling, evaluated directly
 #
 # Default is a seed-0 pilot. After checking the effect, run e.g.
