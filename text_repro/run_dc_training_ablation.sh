@@ -130,6 +130,28 @@ if [[ "${SKIP_MEAN}" != "1" ]]; then
   python -u text_repro/eval_frozen_mean_dc_only.py
 fi
 
+for SEED in ${SEEDS}; do
+  STSB_FULL="outputs/text/stsbenchmark/experiments/stsb_frozen_flag/seed_${SEED}/metrics.json"
+  STSB_NODC="outputs/text/stsbenchmark/experiments/stsb_frozen_flag_nodc/seed_${SEED}/metrics.json"
+  STSB_DCONLY="outputs/text/stsbenchmark/experiments/stsb_frozen_flag_dconly/seed_${SEED}/metrics.json"
+  SPRINT_FULL="outputs/text/sprintduplicatequestions/experiments/sprint_frozen_flag/seed_${SEED}/metrics.json"
+  SPRINT_NODC="outputs/text/sprintduplicatequestions/experiments/sprint_frozen_flag_nodc/seed_${SEED}/metrics.json"
+  SPRINT_DCONLY="outputs/text/sprintduplicatequestions/experiments/sprint_frozen_flag_dconly/seed_${SEED}/metrics.json"
+  MEAN_JSON="outputs/text/dc_training_ablation/mean_dc_only_metrics.json"
+
+  if [[ -f "${STSB_FULL}" && -f "${STSB_NODC}" && -f "${STSB_DCONLY}" \
+        && -f "${SPRINT_FULL}" && -f "${SPRINT_NODC}" && -f "${SPRINT_DCONLY}" \
+        && -f "${MEAN_JSON}" ]]; then
+    echo "============================================================"
+    echo "Summary | matched DC ablation | seed ${SEED}"
+    echo "============================================================"
+    python -u text_repro/summarize_dc_training_ablation.py \
+      --seed "${SEED}"
+  else
+    echo "[summary skipped] seed ${SEED}: one or more comparison files are missing."
+  fi
+done
+
 echo
 echo "Done."
 echo "No-DC STSB:"
