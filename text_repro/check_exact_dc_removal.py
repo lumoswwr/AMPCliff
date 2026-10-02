@@ -1,7 +1,21 @@
 #!/usr/bin/env python3
 """Small numerical sanity check for the exact masked DC-removal operation."""
 
+from pathlib import Path
+import sys
+
 import torch
+
+# Make the repository importable when this file is executed directly as:
+#   python text_repro/check_exact_dc_removal.py
+# train_sts imports AMPCliff.factory..., so Python needs the directory that
+# CONTAINS the AMPCliff repository, not just the repository itself.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_REPO_PARENT = _REPO_ROOT.parent
+for _p in (_REPO_PARENT, _REPO_ROOT / "text_repro"):
+    _s = str(_p)
+    if _s not in sys.path:
+        sys.path.insert(0, _s)
 
 from train_sts import remove_dc_component
 
