@@ -27,6 +27,11 @@ SKIP_STSB="${SKIP_STSB:-0}"
 SKIP_SPRINT="${SKIP_SPRINT:-0}"
 SKIP_MEAN="${SKIP_MEAN:-0}"
 
+echo "============================================================"
+echo "Sanity check | exact spectral DC removal"
+echo "============================================================"
+python -u text_repro/check_exact_dc_removal.py
+
 for SEED in ${SEEDS}; do
   if [[ "${SKIP_STSB}" != "1" ]]; then
     echo "============================================================"
