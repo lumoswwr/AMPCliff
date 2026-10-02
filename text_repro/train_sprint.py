@@ -122,6 +122,20 @@ class MeanPooling(nn.Module):
         return summed / denom
 
 
+def remove_dc_component(features, attention_mask):
+    """
+    Remove the exact sequence DC component over valid tokens.
+
+    This is masked centering over the token axis. After centering, every
+    hidden dimension has zero valid-token sum, so a subsequent global FFT
+    sees an exact zero k=0 coefficient up to floating-point error.
+    """
+    mask = attention_mask.unsqueeze(-1).to(features.dtype)
+    denom = mask.sum(dim=1, keepdim=True).clamp(min=1.0)
+    mean = (features * mask).sum(dim=1, keepdim=True) / denom
+    return (features - mean) * mask
+
+
 # ---------------------------------------------------------
 # Frozen RoBERTa + pooling
 # ---------------------------------------------------------
@@ -136,10 +150,12 @@ class SprintEncoder(nn.Module):
         stft_window_type="rect",
         stft_center=False,
         finetune_backbone=False,
+        remove_dc=False,
     ):
         super().__init__()
 
         self.finetune_backbone = bool(finetune_backbone)
+        self.remove_dc = bool(remove_dc)
 
         self.backbone = AutoModel.from_pretrained(
             model_path,
@@ -287,6 +303,12 @@ class SprintEncoder(nn.Module):
                 outputs = self.backbone(**combined)
                 hidden = outputs.last_hidden_state
 
+        if self.remove_dc:
+            hidden = remove_dc_component(
+                hidden,
+                combined["attention_mask"],
+            )
+
         batch_size = tokens1["input_ids"].size(0)
 
         hidden1 = hidden[:batch_size]
@@ -375,6 +397,7 @@ class SprintPairClassifier(nn.Module):
         stft_window_type="rect",
         stft_center=False,
         finetune_backbone=False,
+        remove_dc=False,
     ):
         super().__init__()
 
@@ -386,6 +409,7 @@ class SprintPairClassifier(nn.Module):
             stft_window_type=stft_window_type,
             stft_center=stft_center,
             finetune_backbone=finetune_backbone,
+            remove_dc=remove_dc,
         )
 
         self.head = CosineLogitHead()
@@ -783,6 +807,17 @@ def train(args):
     print("device:", device)
     print("seed:", args.seed)
     print("pooling:", args.pooling)
+    print("remove_dc:", args.remove_dc)
+
+    if args.remove_dc:
+        if args.pooling != "FLaG":
+            raise ValueError(
+                "--remove_dc is defined for the matched FLaG control only."
+            )
+        if args.finetune_backbone:
+            raise ValueError(
+                "--remove_dc control requires the frozen backbone protocol."
+            )
 
     print("\nSprint protocol:")
     if args.finetune_backbone:
@@ -939,6 +974,7 @@ def train(args):
         stft_window_type=args.stft_window_type,
         stft_center=args.stft_center,
         finetune_backbone=args.finetune_backbone,
+        remove_dc=args.remove_dc,
     ).to(device)
 
     total_params = sum(
@@ -1697,6 +1733,16 @@ def main():
         help=(
             "Mechanism-control ablation: unfreeze RoBERTa. "
             "Default remains the published frozen-backbone protocol."
+        ),
+    )
+
+    parser.add_argument(
+        "--remove_dc",
+        action="store_true",
+        help=(
+            "Exact final-hidden-state DC ablation used throughout training "
+            "and evaluation. Subtract the masked token mean before FLaG, "
+            "making the valid-token k=0 FFT coefficient zero."
         ),
     )
 
