@@ -36,6 +36,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
         post_pool_norm: bool = False,
         window_type: Optional[str] = None,
         fixed_fft_length: Optional[int] = None,
+        remove_dc: bool = False,
     ):
         super().__init__()
 
@@ -66,6 +67,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
         self.use_latent = bool(use_latent)
         self.post_pool_norm = bool(post_pool_norm)
         self.window_type = window_type
+        self.remove_dc = bool(remove_dc)
         self.eps = float(eps)
 
         if (
@@ -242,6 +244,28 @@ class FFTLatentAttentionGatePooling(nn.Module):
             n=fft_length,
             dim=1,
         )
+
+        # Exact spectral DC ablation.
+        #
+        # Important: do this AFTER the actual masked/windowed rFFT rather
+        # than subtracting the valid-token mean in time space. With dynamic
+        # right padding, valid-token centering would also perturb non-DC
+        # coefficients of the batch-length FFT. Multiplying only k=0 by zero
+        # leaves every non-DC coefficient bit-for-bit unchanged apart from
+        # ordinary floating-point multiplication.
+        if self.remove_dc:
+            freq_mask = torch.ones(
+                spec.size(1),
+                dtype=spec.real.dtype,
+                device=spec.device,
+            )
+            freq_mask[0] = 0.0
+            spec = (
+                spec
+                * freq_mask.view(1, -1, 1)
+            )
+
+        self._last_remove_dc = self.remove_dc
 
         return torch.cat(
             [spec.real, spec.imag],
