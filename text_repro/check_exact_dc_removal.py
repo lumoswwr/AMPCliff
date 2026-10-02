@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
-"""Small numerical sanity check for the exact masked DC-removal operation."""
+"""Numerically verify that FLaG DC removal zeros only k=0."""
 
 from pathlib import Path
 import sys
 
 import torch
 
-# Make the repository importable when this file is executed directly as:
-#   python text_repro/check_exact_dc_removal.py
-# train_sts imports AMPCliff.factory..., so Python needs the directory that
-# CONTAINS the AMPCliff repository, not just the repository itself.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _REPO_PARENT = _REPO_ROOT.parent
 for _p in (_REPO_PARENT, _REPO_ROOT / "text_repro"):
@@ -17,45 +13,82 @@ for _p in (_REPO_PARENT, _REPO_ROOT / "text_repro"):
     if _s not in sys.path:
         sys.path.insert(0, _s)
 
-from train_sts import remove_dc_component
+from AMPCliff.factory.pooling.flag_pooling import (
+    FFTLatentAttentionGatePooling,
+)
 
 
 def main():
     torch.manual_seed(0)
 
-    x = torch.randn(4, 11, 7)
+    # Variable valid lengths inside one dynamically padded batch.
+    x = torch.randn(4, 11, 8)
     lengths = torch.tensor([11, 8, 5, 2])
-
     positions = torch.arange(x.size(1))[None, :]
     mask = (positions < lengths[:, None]).long()
 
-    centered = remove_dc_component(x, mask)
-
-    valid_sum = (
-        centered
-        * mask.unsqueeze(-1).to(centered.dtype)
-    ).sum(dim=1)
-
-    max_abs_dc = float(valid_sum.abs().max())
-
-    padded = centered[
-        ~mask.bool()
-    ]
-    max_abs_padding = (
-        float(padded.abs().max())
-        if padded.numel()
-        else 0.0
+    base = FFTLatentAttentionGatePooling(
+        d_model=8,
+        num_latents=2,
+        num_heads=2,
+        dropout=0.0,
+        remove_dc=False,
+    )
+    nodc = FFTLatentAttentionGatePooling(
+        d_model=8,
+        num_latents=2,
+        num_heads=2,
+        dropout=0.0,
+        remove_dc=True,
     )
 
-    print("max |valid-token DC sum|:", max_abs_dc)
-    print("max |padding value|:", max_abs_padding)
+    # We only test the analysis FFT, so learned parameter values are irrelevant.
+    freq_base = base._to_frequency_tokens(
+        x,
+        attention_mask=mask,
+    )
+    freq_nodc = nodc._to_frequency_tokens(
+        x,
+        attention_mask=mask,
+    )
 
-    if max_abs_dc > 1e-5:
-        raise RuntimeError("DC removal sanity check failed.")
-    if max_abs_padding > 1e-7:
-        raise RuntimeError("Padding-zero sanity check failed.")
+    d = x.size(-1)
 
-    print("PASS: exact masked DC removal is numerically zero-sum.")
+    # k=0 real and imaginary components must both be exactly zero.
+    dc_real = freq_nodc[:, 0, :d]
+    dc_imag = freq_nodc[:, 0, d:]
+    max_abs_dc = max(
+        float(dc_real.abs().max()),
+        float(dc_imag.abs().max()),
+    )
+
+    # Every k>0 coefficient must be unchanged.
+    max_abs_non_dc_change = float(
+        (
+            freq_nodc[:, 1:, :]
+            - freq_base[:, 1:, :]
+        ).abs().max()
+    )
+
+    # Sanity: the original DC should actually be nonzero.
+    original_dc_magnitude = float(
+        freq_base[:, 0, :].abs().max()
+    )
+
+    print("original max |DC token|:", original_dc_magnitude)
+    print("after ablation max |DC token|:", max_abs_dc)
+    print("max |non-DC coefficient change|:", max_abs_non_dc_change)
+
+    if original_dc_magnitude <= 1e-6:
+        raise RuntimeError("Sanity input unexpectedly has near-zero original DC.")
+    if max_abs_dc > 1e-7:
+        raise RuntimeError("DC coefficient was not fully removed.")
+    if max_abs_non_dc_change > 1e-7:
+        raise RuntimeError(
+            "Non-DC coefficients changed; ablation is not spectrally exact."
+        )
+
+    print("PASS: k=0 is zero and every k>0 coefficient is unchanged.")
 
 
 if __name__ == "__main__":
