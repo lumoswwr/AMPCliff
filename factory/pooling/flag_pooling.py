@@ -37,6 +37,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
         window_type: Optional[str] = None,
         fixed_fft_length: Optional[int] = None,
         remove_dc: bool = False,
+        dc_only: bool = False,
     ):
         super().__init__()
 
@@ -68,6 +69,13 @@ class FFTLatentAttentionGatePooling(nn.Module):
         self.post_pool_norm = bool(post_pool_norm)
         self.window_type = window_type
         self.remove_dc = bool(remove_dc)
+        self.dc_only = bool(dc_only)
+
+        if self.remove_dc and self.dc_only:
+            raise ValueError(
+                "remove_dc and dc_only are mutually exclusive."
+            )
+
         self.eps = float(eps)
 
         if (
@@ -253,19 +261,27 @@ class FFTLatentAttentionGatePooling(nn.Module):
         # coefficients of the batch-length FFT. Multiplying only k=0 by zero
         # leaves every non-DC coefficient bit-for-bit unchanged apart from
         # ordinary floating-point multiplication.
-        if self.remove_dc:
+        if self.remove_dc or self.dc_only:
             freq_mask = torch.ones(
                 spec.size(1),
                 dtype=spec.real.dtype,
                 device=spec.device,
             )
-            freq_mask[0] = 0.0
+
+            if self.remove_dc:
+                # Keep every non-DC frequency and remove only k=0.
+                freq_mask[0] = 0.0
+            else:
+                # Keep exactly k=0 and remove every non-DC frequency.
+                freq_mask[1:] = 0.0
+
             spec = (
                 spec
                 * freq_mask.view(1, -1, 1)
             )
 
         self._last_remove_dc = self.remove_dc
+        self._last_dc_only = self.dc_only
 
         return torch.cat(
             [spec.real, spec.imag],
