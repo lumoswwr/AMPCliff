@@ -20,6 +20,15 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
+
+# Support direct execution without relying on a pre-set PYTHONPATH.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_REPO_PARENT = _REPO_ROOT.parent
+for _p in (_REPO_PARENT, _REPO_ROOT / "text_repro"):
+    _s = str(_p)
+    if _s not in sys.path:
+        sys.path.insert(0, _s)
 
 import numpy as np
 import torch
