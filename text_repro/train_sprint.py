@@ -228,6 +228,28 @@ class SprintEncoder(nn.Module):
                 mean_anchor_beta_init=mean_anchor_beta_init,
             )
 
+        elif pooling == "FLaG_AttnFreqGate":
+            # Proposal 2: derive one scalar gate per frequency token from the
+            # existing latent-attention weights, while retaining the original
+            # FLaG feature/channel gate and reconstruction path.
+            self.pool = FFTLatentAttentionGatePooling(
+                d_model=d_model,
+                num_latents=8,
+                num_heads=4,
+                dropout=0.1,
+                time_pool="max",
+                gate_residual=True,
+                eps=1e-6,
+                use_gate=True,
+                use_latent=True,
+                post_pool_norm=False,
+                window_type=None,
+                fixed_fft_length=None,
+                remove_dc=remove_dc,
+                dc_only=dc_only,
+                attention_frequency_gate=True,
+            )
+
         elif pooling == "FLaG_PostNorm":
             # 2x2 non-operator control:
             # published FLaG dropout, but enable post-pool norm.
@@ -1808,6 +1830,7 @@ def main():
             "FLaG",
             "FLaG_MeanResidual",
             "FLaG_MeanAnchor",
+            "FLaG_AttnFreqGate",
             "FLaG_PostNorm",
             "FLaG_NoDropout",
             "FLaG_E12Match",
