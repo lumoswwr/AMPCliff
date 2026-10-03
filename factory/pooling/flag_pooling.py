@@ -43,6 +43,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
         mean_mix_init: float = 0.5,
         mean_anchor_residual: bool = False,
         mean_anchor_beta_init: float = 0.1,
+        attention_frequency_gate: bool = False,
     ):
         super().__init__()
 
@@ -77,6 +78,12 @@ class FFTLatentAttentionGatePooling(nn.Module):
         self.dc_only = bool(dc_only)
         self.mean_residual = bool(mean_residual)
         self.mean_anchor_residual = bool(mean_anchor_residual)
+        self.attention_frequency_gate = bool(attention_frequency_gate)
+
+        if self.attention_frequency_gate and not self.use_latent:
+            raise ValueError(
+                "attention_frequency_gate=True requires use_latent=True."
+            )
 
         if self.mean_residual and self.mean_anchor_residual:
             raise ValueError(
@@ -381,6 +388,12 @@ class FFTLatentAttentionGatePooling(nn.Module):
             )
         )
 
+        # Keep one live reference only until _apply_gate consumes it. This
+        # allows the frequency gate to backpropagate through the same latent
+        # attention weights without changing the public/private return type
+        # of this helper.
+        self._current_latent_attn_weights = attn_weights
+
         self._last_latent_attn_weights = (
             attn_weights.detach()
         )
@@ -424,6 +437,74 @@ class FFTLatentAttentionGatePooling(nn.Module):
         enhanced_freq = (
             freq_tokens * gate.unsqueeze(1)
         )
+
+        if self.attention_frequency_gate:
+            if not hasattr(
+                self,
+                "_current_latent_attn_weights",
+            ):
+                raise RuntimeError(
+                    "Attention-derived frequency gate requires "
+                    "latent attention weights from the current forward pass."
+                )
+
+            # [B, M, K] -> [B, K]
+            #
+            # Average over latent queries, then renormalize because attention
+            # dropout can make the returned training-time weights deviate
+            # slightly from a unit sum.
+            freq_importance = (
+                self._current_latent_attn_weights
+                .mean(dim=1)
+                .clamp_min(0.0)
+            )
+
+            denom = (
+                freq_importance
+                .sum(dim=1, keepdim=True)
+                .clamp_min(self.eps)
+            )
+            freq_importance = (
+                freq_importance / denom
+            )
+
+            # Uniform attention should be the identity:
+            #   a_k = 1/K -> r_k = 1 -> g_k = 1.
+            #
+            # The bounded map gives genuine suppression and enhancement:
+            #   r=0      -> g=0
+            #   r=1      -> g=1
+            #   r->inf   -> g->2
+            num_freqs = freq_tokens.size(1)
+            relative_importance = (
+                float(num_freqs)
+                * freq_importance
+            )
+            frequency_gate = (
+                2.0
+                * relative_importance
+                / (1.0 + relative_importance)
+            )
+
+            enhanced_freq = (
+                enhanced_freq
+                * frequency_gate.unsqueeze(-1)
+            )
+
+            self._last_frequency_attention_importance = (
+                freq_importance.detach()
+            )
+            self._last_frequency_gate = (
+                frequency_gate.detach()
+            )
+
+        # Do not retain the autograd graph through a module attribute after
+        # the frequency gate has consumed the live attention weights.
+        if hasattr(
+            self,
+            "_current_latent_attn_weights",
+        ):
+            del self._current_latent_attn_weights
 
         self._last_freq_tokens = (
             freq_tokens.detach()
