@@ -11,11 +11,13 @@ set -euo pipefail
 # beta=0 is exact Mean under cosine scoring.
 # The residual cannot cancel the Mean direction.
 #
-# Fast algorithm-development pilot:
+# Algorithm-development protocol:
 # STSB: original UNFROZEN backbone setting, seed 0, 3 epochs.
-# Sprint: original FROZEN backbone setting, seed 0, 3 epochs.
-# Once a variant is promising, rerun the final comparison with the full
-# task-specific protocol if needed.
+# Sprint: original FROZEN backbone setting, seed 0, 10 epochs.
+#
+# Sprint keeps its original 10-epoch training horizon because the published
+# frozen protocol often improves substantially after epoch 3. We still use
+# only seed 0 during rapid architecture iteration.
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "${REPO_ROOT}"
@@ -68,7 +70,7 @@ if [[ "${SKIP_SPRINT}" != "1" ]]; then
       --pooling FLaG_MeanAnchor \
       --experiment_name sprint_frozen_flag_meananchor \
       --seed "${SEED}" \
-      --epochs 3 \
+      --epochs 10 \
       --batch_size 32 \
       --eval_batch_size 64 \
       --max_length 128 \
