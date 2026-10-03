@@ -146,6 +146,7 @@ class SentenceEncoder(nn.Module):
         remove_dc=False,
         dc_only=False,
         mean_mix_init=0.5,
+        mean_anchor_beta_init=0.1,
     ):
         super().__init__()
 
@@ -166,7 +167,12 @@ class SentenceEncoder(nn.Module):
         if pooling == "mean":
             self.pool = MeanPooling()
 
-        elif pooling in {"FLaG", "FLaG_Hann", "FLaG_MeanResidual"}:
+        elif pooling in {
+            "FLaG",
+            "FLaG_Hann",
+            "FLaG_MeanResidual",
+            "FLaG_MeanAnchor",
+        }:
 
             window_type = (
                 "hann"
@@ -193,6 +199,10 @@ class SentenceEncoder(nn.Module):
                     pooling == "FLaG_MeanResidual"
                 ),
                 mean_mix_init=mean_mix_init,
+                mean_anchor_residual=(
+                    pooling == "FLaG_MeanAnchor"
+                ),
+                mean_anchor_beta_init=mean_anchor_beta_init,
             )
         
         elif pooling in {
@@ -461,6 +471,7 @@ def train(args):
         remove_dc=args.remove_dc,
         dc_only=args.dc_only,
         mean_mix_init=args.mean_mix_init,
+        mean_anchor_beta_init=args.mean_anchor_beta_init,
     ).to(device)
 
     print("\nBackbone hidden size:",
@@ -504,7 +515,10 @@ def train(args):
         if not p.requires_grad:
             continue
 
-        if name.endswith("mean_mix_alpha"):
+        if (
+            name.endswith("mean_mix_alpha")
+            or name.endswith("mean_anchor_beta")
+        ):
             mean_mix_params.append(p)
         else:
             pool_params.append(p)
@@ -702,6 +716,15 @@ def train(args):
                 ).cpu()
             )
 
+        if hasattr(model.pool, "mean_anchor_beta"):
+            row["mean_anchor_beta"] = float(
+                torch.clamp(
+                    model.pool.mean_anchor_beta.detach(),
+                    0.0,
+                    1.0,
+                ).cpu()
+            )
+
         history.append(row)
 
         print(
@@ -714,6 +737,11 @@ def train(args):
             + (
                 f" | alpha={row['mean_mix_alpha']:.6f}"
                 if "mean_mix_alpha" in row
+                else ""
+            )
+            + (
+                f" | beta={row['mean_anchor_beta']:.6f}"
+                if "mean_anchor_beta" in row
                 else ""
             )
             + "\n"
@@ -807,6 +835,19 @@ def train(args):
             if hasattr(model.pool, "mean_mix_alpha")
             else {}
         ),
+        **(
+            {
+                "mean_anchor_beta": float(
+                    torch.clamp(
+                        model.pool.mean_anchor_beta.detach(),
+                        0.0,
+                        1.0,
+                    ).cpu()
+                )
+            }
+            if hasattr(model.pool, "mean_anchor_beta")
+            else {}
+        ),
     }
 
     print("\n================================")
@@ -856,6 +897,7 @@ def main():
             "FLaG",
             "FLaG_Hann",
             "FLaG_MeanResidual",
+            "FLaG_MeanAnchor",
             "STFT_FLaG",
             "STFT_FLaG_Pos",
         ],
@@ -978,6 +1020,17 @@ def main():
             "Initial alpha for FLaG_MeanResidual. alpha=0 is exact Mean "
             "under cosine scoring; alpha=1 is exact original FLaG. "
             "Default 0.5 gives both branches gradient from the start."
+        ),
+    )
+
+    parser.add_argument(
+        "--mean_anchor_beta_init",
+        type=float,
+        default=0.1,
+        help=(
+            "Initial beta for FLaG_MeanAnchor. beta=0 is exact Mean. "
+            "A small positive default keeps training near Mean while "
+            "allowing immediate gradient into the FLaG residual branch."
         ),
     )
 
