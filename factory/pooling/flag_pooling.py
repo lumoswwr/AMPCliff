@@ -44,6 +44,8 @@ class FFTLatentAttentionGatePooling(nn.Module):
         mean_anchor_residual: bool = False,
         mean_anchor_beta_init: float = 0.1,
         attention_frequency_gate: bool = False,
+        learned_frequency_gate: bool = False,
+        learned_frequency_hidden: int = 256,
     ):
         super().__init__()
 
@@ -79,10 +81,29 @@ class FFTLatentAttentionGatePooling(nn.Module):
         self.mean_residual = bool(mean_residual)
         self.mean_anchor_residual = bool(mean_anchor_residual)
         self.attention_frequency_gate = bool(attention_frequency_gate)
+        self.learned_frequency_gate = bool(learned_frequency_gate)
+        self.learned_frequency_hidden = int(learned_frequency_hidden)
 
         if self.attention_frequency_gate and not self.use_latent:
             raise ValueError(
                 "attention_frequency_gate=True requires use_latent=True."
+            )
+
+        if self.learned_frequency_gate and not self.use_latent:
+            raise ValueError(
+                "learned_frequency_gate=True requires use_latent=True."
+            )
+
+        if self.attention_frequency_gate and self.learned_frequency_gate:
+            raise ValueError(
+                "attention_frequency_gate and learned_frequency_gate "
+                "are mutually exclusive."
+            )
+
+        if self.learned_frequency_hidden <= 0:
+            raise ValueError(
+                "learned_frequency_hidden must be > 0, "
+                f"got {learned_frequency_hidden}"
             )
 
         if self.mean_residual and self.mean_anchor_residual:
@@ -182,6 +203,51 @@ class FFTLatentAttentionGatePooling(nn.Module):
                 nn.GELU(),
                 nn.Dropout(dropout),
                 nn.Linear(freq_dim, freq_dim),
+            )
+
+        if self.learned_frequency_gate:
+            # Proposal 2B: a frequency-specific scorer that does not reuse
+            # latent-attention probabilities as the gate itself.
+            #
+            # For each frequency bin k:
+            #   h_k = W_x X_k + W_s s + W_p p_k
+            #   g_k = 2 * sigmoid(w^T GELU(LN(h_k)))
+            #
+            # where s is the sentence-level latent summary and p_k is the
+            # normalized frequency coordinate in [0, 1]. The final scalar
+            # projection is zero-initialized, so every g_k starts exactly at
+            # 1 and the whole module initially reproduces original FLaG.
+            hidden = self.learned_frequency_hidden
+
+            self.frequency_token_proj = nn.Linear(
+                freq_dim,
+                hidden,
+            )
+            self.frequency_summary_proj = nn.Linear(
+                freq_dim,
+                hidden,
+            )
+            self.frequency_position_proj = nn.Linear(
+                1,
+                hidden,
+                bias=False,
+            )
+            self.frequency_scorer_norm = nn.LayerNorm(
+                hidden
+            )
+            self.frequency_scorer_dropout = nn.Dropout(
+                dropout
+            )
+            self.frequency_scorer_out = nn.Linear(
+                hidden,
+                1,
+            )
+
+            nn.init.zeros_(
+                self.frequency_scorer_out.weight
+            )
+            nn.init.zeros_(
+                self.frequency_scorer_out.bias
             )
 
         self.time_out_proj = nn.Linear(d_model, d_model)
@@ -496,6 +562,92 @@ class FFTLatentAttentionGatePooling(nn.Module):
             )
             self._last_frequency_gate = (
                 frequency_gate.detach()
+            )
+
+        if self.learned_frequency_gate:
+            if latent_out is None:
+                raise RuntimeError(
+                    "Learned frequency gate requires latent_out."
+                )
+
+            B, K, _ = freq_tokens.shape
+
+            latent_summary = latent_out.mean(
+                dim=1
+            )
+
+            if K <= 1:
+                frequency_position = torch.zeros(
+                    1,
+                    K,
+                    1,
+                    dtype=freq_tokens.dtype,
+                    device=freq_tokens.device,
+                )
+            else:
+                frequency_position = torch.linspace(
+                    0.0,
+                    1.0,
+                    K,
+                    dtype=freq_tokens.dtype,
+                    device=freq_tokens.device,
+                ).view(1, K, 1)
+
+            scorer_hidden = (
+                self.frequency_token_proj(
+                    freq_tokens
+                )
+                + self.frequency_summary_proj(
+                    latent_summary
+                ).unsqueeze(1)
+                + self.frequency_position_proj(
+                    frequency_position
+                )
+            )
+
+            scorer_hidden = (
+                self.frequency_scorer_norm(
+                    scorer_hidden
+                )
+            )
+            scorer_hidden = F.gelu(
+                scorer_hidden
+            )
+            scorer_hidden = (
+                self.frequency_scorer_dropout(
+                    scorer_hidden
+                )
+            )
+
+            raw_frequency_score = (
+                self.frequency_scorer_out(
+                    scorer_hidden
+                ).squeeze(-1)
+            )
+
+            # Identity-centered bounded gate:
+            # raw=0 -> g_k=1 exactly;
+            # raw->-inf -> 0; raw->+inf -> 2.
+            frequency_gate = (
+                2.0
+                * torch.sigmoid(
+                    raw_frequency_score
+                )
+            )
+
+            enhanced_freq = (
+                enhanced_freq
+                * frequency_gate.unsqueeze(-1)
+            )
+
+            self._last_learned_frequency_score = (
+                raw_frequency_score.detach()
+            )
+            self._last_frequency_gate = (
+                frequency_gate.detach()
+            )
+            self._last_frequency_position = (
+                frequency_position.detach()
             )
 
         # Do not retain the autograd graph through a module attribute after
