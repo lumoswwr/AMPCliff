@@ -250,6 +250,30 @@ class SprintEncoder(nn.Module):
                 attention_frequency_gate=True,
             )
 
+        elif pooling == "FLaG_MeanResidualAttnFreq":
+            # Combined hypothesis: retain an exact Mean endpoint while the
+            # FLaG branch gains sample-adaptive frequency-wise suppression
+            # from the existing latent-attention distribution.
+            self.pool = FFTLatentAttentionGatePooling(
+                d_model=d_model,
+                num_latents=8,
+                num_heads=4,
+                dropout=0.1,
+                time_pool="max",
+                gate_residual=True,
+                eps=1e-6,
+                use_gate=True,
+                use_latent=True,
+                post_pool_norm=False,
+                window_type=None,
+                fixed_fft_length=None,
+                remove_dc=remove_dc,
+                dc_only=dc_only,
+                mean_residual=True,
+                mean_mix_init=mean_mix_init,
+                attention_frequency_gate=True,
+            )
+
         elif pooling == "FLaG_LearnedFreqGate":
             # Proposal 2B: predict one scalar gate per frequency bin from
             # the current frequency token, the latent sentence summary, and
@@ -1863,6 +1887,7 @@ def main():
             "FLaG_MeanResidual",
             "FLaG_MeanAnchor",
             "FLaG_AttnFreqGate",
+            "FLaG_MeanResidualAttnFreq",
             "FLaG_LearnedFreqGate",
             "FLaG_PostNorm",
             "FLaG_NoDropout",
