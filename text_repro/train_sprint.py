@@ -139,6 +139,7 @@ class SprintEncoder(nn.Module):
         finetune_backbone=False,
         remove_dc=False,
         dc_only=False,
+        mean_mix_init=0.5,
     ):
         super().__init__()
 
@@ -179,6 +180,29 @@ class SprintEncoder(nn.Module):
                 fixed_fft_length=None,
                 remove_dc=remove_dc,
                 dc_only=dc_only,
+            )
+
+        elif pooling == "FLaG_MeanResidual":
+            # Proposal 1: explicit Mean/DC safety path.
+            # Endpoints are cosine-equivalent to Mean (alpha=0) and the
+            # original published FLaG (alpha=1).
+            self.pool = FFTLatentAttentionGatePooling(
+                d_model=d_model,
+                num_latents=8,
+                num_heads=4,
+                dropout=0.1,
+                time_pool="max",
+                gate_residual=True,
+                eps=1e-6,
+                use_gate=True,
+                use_latent=True,
+                post_pool_norm=False,
+                window_type=None,
+                fixed_fft_length=None,
+                remove_dc=remove_dc,
+                dc_only=dc_only,
+                mean_residual=True,
+                mean_mix_init=mean_mix_init,
             )
 
         elif pooling == "FLaG_PostNorm":
@@ -384,6 +408,7 @@ class SprintPairClassifier(nn.Module):
         finetune_backbone=False,
         remove_dc=False,
         dc_only=False,
+        mean_mix_init=0.5,
     ):
         super().__init__()
 
@@ -397,6 +422,7 @@ class SprintPairClassifier(nn.Module):
             finetune_backbone=finetune_backbone,
             remove_dc=remove_dc,
             dc_only=dc_only,
+            mean_mix_init=mean_mix_init,
         )
 
         self.head = CosineLogitHead()
@@ -833,6 +859,15 @@ def train(args):
         print("- residual gate: True")
         print("- post_pool_norm: False")
 
+    if args.pooling == "FLaG_MeanResidual":
+        print("\nMean-residual FLaG:")
+        print("- base FLaG: published Sprint settings")
+        print("- explicit masked-Mean branch: True")
+        print("- branch L2 normalization: True")
+        print("- learnable scalar alpha init:", args.mean_mix_init)
+        print("- alpha=0: Mean endpoint")
+        print("- alpha=1: original FLaG endpoint")
+
     if args.pooling == "FLaG_PostNorm":
         print("\nGlobal FLaG 2x2 control A:")
         print("- operator: global FFT")
@@ -969,6 +1004,7 @@ def train(args):
         finetune_backbone=args.finetune_backbone,
         remove_dc=args.remove_dc,
         dc_only=args.dc_only,
+        mean_mix_init=args.mean_mix_init,
     ).to(device)
 
     total_params = sum(
@@ -1034,12 +1070,20 @@ def train(args):
             if p.requires_grad
         ]
 
-        non_backbone_params = [
-            p
-            for name, p in model.named_parameters()
-            if p.requires_grad
-            and not name.startswith("encoder.backbone.")
-        ]
+        non_backbone_params = []
+        mean_mix_params = []
+
+        for name, p in model.named_parameters():
+            if (
+                not p.requires_grad
+                or name.startswith("encoder.backbone.")
+            ):
+                continue
+
+            if name.endswith("mean_mix_alpha"):
+                mean_mix_params.append(p)
+            else:
+                non_backbone_params.append(p)
 
         parameter_groups = [
             {
@@ -1054,6 +1098,13 @@ def train(args):
             },
         ]
 
+        if mean_mix_params:
+            parameter_groups.append({
+                "params": mean_mix_params,
+                "lr": args.learning_rate,
+                "weight_decay": 0.0,
+            })
+
         optimizer = torch.optim.AdamW(
             parameter_groups,
             eps=1e-8,
@@ -1064,16 +1115,35 @@ def train(args):
                 "RoBERTa backbone must be frozen for published Sprint protocol."
             )
 
-        trainable = [
-            p
-            for p in model.parameters()
-            if p.requires_grad
+        regular_trainable = []
+        mean_mix_params = []
+
+        for name, p in model.named_parameters():
+            if not p.requires_grad:
+                continue
+
+            if name.endswith("mean_mix_alpha"):
+                mean_mix_params.append(p)
+            else:
+                regular_trainable.append(p)
+
+        parameter_groups = [
+            {
+                "params": regular_trainable,
+                "lr": args.learning_rate,
+                "weight_decay": args.weight_decay,
+            },
         ]
 
+        if mean_mix_params:
+            parameter_groups.append({
+                "params": mean_mix_params,
+                "lr": args.learning_rate,
+                "weight_decay": 0.0,
+            })
+
         optimizer = torch.optim.AdamW(
-            trainable,
-            lr=args.learning_rate,
-            weight_decay=args.weight_decay,
+            parameter_groups,
             eps=1e-8,
         )
 
@@ -1366,6 +1436,15 @@ def train(args):
                 ],
         }
 
+        if hasattr(model.pool, "mean_mix_alpha"):
+            row["mean_mix_alpha"] = float(
+                torch.clamp(
+                    model.pool.mean_mix_alpha.detach(),
+                    0.0,
+                    1.0,
+                ).cpu()
+            )
+
         history.append(
             row
         )
@@ -1381,7 +1460,13 @@ def train(args):
             f"f1Thr={val_best_f1['threshold']:.6f} | "
             f"F1pred+={val_f1_threshold_metrics['predicted_positive_rate']:.6f} | "
             f"scale={float(model.head.positive_scale().detach().cpu()):.6f} | "
-            f"bias={float(model.head.bias.detach().cpu()):.6f}\n"
+            f"bias={float(model.head.bias.detach().cpu()):.6f}"
+            + (
+                f" | alpha={row['mean_mix_alpha']:.6f}"
+                if "mean_mix_alpha" in row
+                else ""
+            )
+            + "\n"
         )
 
         # The published frozen-backbone Sprint protocol selects by
@@ -1542,6 +1627,19 @@ def train(args):
             ],
         **(
             {
+                "mean_mix_alpha": float(
+                    torch.clamp(
+                        model.pool.mean_mix_alpha.detach(),
+                        0.0,
+                        1.0,
+                    ).cpu()
+                )
+            }
+            if hasattr(model.pool, "mean_mix_alpha")
+            else {}
+        ),
+        **(
+            {
                 "test_average_precision":
                     test_metrics["average_precision"],
                 "test_cosine_average_precision":
@@ -1645,6 +1743,7 @@ def main():
         choices=[
             "mean",
             "FLaG",
+            "FLaG_MeanResidual",
             "FLaG_PostNorm",
             "FLaG_NoDropout",
             "FLaG_E12Match",
@@ -1747,6 +1846,16 @@ def main():
             "Exact FLaG spectral DC-only control used throughout training "
             "and evaluation. Keep the actual rFFT k=0 coefficient and set "
             "every k>0 coefficient to zero."
+        ),
+    )
+
+    parser.add_argument(
+        "--mean_mix_init",
+        type=float,
+        default=0.5,
+        help=(
+            "Initial alpha for FLaG_MeanResidual. alpha=0 is the Mean "
+            "endpoint and alpha=1 the original FLaG endpoint under cosine."
         ),
     )
 
