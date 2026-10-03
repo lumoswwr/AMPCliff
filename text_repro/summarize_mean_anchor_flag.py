@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize Mean-anchor FLaG pilot and 3-seed Sprint result."""
+"""Summarize Mean-anchor FLaG seed-0 pilot results."""
 
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ def main():
     anchor_betas = []
     full_vals = []
 
-    for seed in [0, 1, 2]:
+    for seed in [0]:
         a = read(
             sprint_root
             / "sprint_frozen_flag_meananchor"
@@ -127,7 +127,7 @@ def main():
     if full_vals:
         m, sd = mean_std(full_vals)
         print(
-            f"{'Original FLaG (0-2)':<22s} "
+            f"{'Original FLaG (s0)':<22s} "
             f"{m:.6f} ± {sd:.6f}"
         )
 
@@ -135,7 +135,7 @@ def main():
         m, sd = mean_std(anchor_vals)
         bm, bsd = mean_std(anchor_betas)
         print(
-            f"{'Mean-anchor (0-2)':<22s} "
+            f"{'Mean-anchor (s0)':<22s} "
             f"{m:.6f} ± {sd:.6f} "
             f"| beta={bm:.6f} ± {bsd:.6f}"
         )
