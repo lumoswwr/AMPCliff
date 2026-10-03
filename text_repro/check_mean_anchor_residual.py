@@ -52,10 +52,8 @@ def main():
     ).eval()
 
     with torch.no_grad():
-        # beta=0 must be the exact Mean endpoint under cosine scoring.
-        # A very negative logit approximates beta=0 closely enough to
-        # verify the Mean endpoint numerically under cosine scoring.
-        model.mean_anchor_beta_logit.fill_(-30.0)
+        # beta=0 is an exact reachable endpoint with tanh(raw=0).
+        model.mean_anchor_beta_raw.fill_(0.0)
         z_beta0 = model(x, mask)
 
         z_mean = masked_mean_pooling(
@@ -73,8 +71,8 @@ def main():
 
         # Run with nonzero beta so the stored residual is populated.
         beta = 0.3
-        model.mean_anchor_beta_logit.fill_(
-            torch.log(torch.tensor(beta / (1.0 - beta)))
+        model.mean_anchor_beta_raw.fill_(
+            torch.atanh(torch.tensor(beta))
         )
         _ = model(x, mask)
 
