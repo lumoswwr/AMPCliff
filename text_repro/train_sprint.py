@@ -250,6 +250,30 @@ class SprintEncoder(nn.Module):
                 attention_frequency_gate=True,
             )
 
+        elif pooling == "FLaG_LearnedFreqGate":
+            # Proposal 2B: predict one scalar gate per frequency bin from
+            # the current frequency token, the latent sentence summary, and
+            # a normalized frequency coordinate. The scorer is initialized
+            # at identity (g_k=1), so training starts from original FLaG.
+            self.pool = FFTLatentAttentionGatePooling(
+                d_model=d_model,
+                num_latents=8,
+                num_heads=4,
+                dropout=0.1,
+                time_pool="max",
+                gate_residual=True,
+                eps=1e-6,
+                use_gate=True,
+                use_latent=True,
+                post_pool_norm=False,
+                window_type=None,
+                fixed_fft_length=None,
+                remove_dc=remove_dc,
+                dc_only=dc_only,
+                learned_frequency_gate=True,
+                learned_frequency_hidden=256,
+            )
+
         elif pooling == "FLaG_PostNorm":
             # 2x2 non-operator control:
             # published FLaG dropout, but enable post-pool norm.
@@ -922,6 +946,14 @@ def train(args):
         print("- FLaG contribution: orthogonal residual only")
         print("- learnable beta init:", args.mean_anchor_beta_init)
         print("- beta=0: exact Mean endpoint under cosine")
+
+    if args.pooling == "FLaG_LearnedFreqGate":
+        print("\nLearned frequency-gate FLaG:")
+        print("- base FLaG: published Sprint settings")
+        print("- one sample-adaptive scalar gate per frequency bin")
+        print("- scorer inputs: X_k + latent summary + frequency position")
+        print("- gate range: (0, 2)")
+        print("- identity initialization: g_k=1")
 
     if args.pooling == "FLaG_PostNorm":
         print("\nGlobal FLaG 2x2 control A:")
@@ -1831,6 +1863,7 @@ def main():
             "FLaG_MeanResidual",
             "FLaG_MeanAnchor",
             "FLaG_AttnFreqGate",
+            "FLaG_LearnedFreqGate",
             "FLaG_PostNorm",
             "FLaG_NoDropout",
             "FLaG_E12Match",
