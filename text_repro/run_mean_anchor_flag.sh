@@ -11,8 +11,11 @@ set -euo pipefail
 # beta=0 is exact Mean under cosine scoring.
 # The residual cannot cancel the Mean direction.
 #
-# STSB: original UNFROZEN protocol, seed 0 pilot by default.
-# Sprint: original FROZEN protocol, 3 seeds (0,1,2) by default.
+# Fast algorithm-development pilot:
+# STSB: original UNFROZEN backbone setting, seed 0, 3 epochs.
+# Sprint: original FROZEN backbone setting, seed 0, 3 epochs.
+# Once a variant is promising, rerun the final comparison with the full
+# task-specific protocol if needed.
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "${REPO_ROOT}"
@@ -21,7 +24,7 @@ PARENT_DIR="$(dirname "${REPO_ROOT}")"
 export PYTHONPATH="${PARENT_DIR}:${REPO_ROOT}/text_repro${PYTHONPATH:+:${PYTHONPATH}}"
 
 STSB_SEEDS="${STSB_SEEDS:-0}"
-SPRINT_SEEDS="${SPRINT_SEEDS:-0 1 2}"
+SPRINT_SEEDS="${SPRINT_SEEDS:-0}"
 BETA_INIT="${BETA_INIT:-0.1}"
 SKIP_STSB="${SKIP_STSB:-0}"
 SKIP_SPRINT="${SKIP_SPRINT:-0}"
@@ -65,7 +68,7 @@ if [[ "${SKIP_SPRINT}" != "1" ]]; then
       --pooling FLaG_MeanAnchor \
       --experiment_name sprint_frozen_flag_meananchor \
       --seed "${SEED}" \
-      --epochs 10 \
+      --epochs 3 \
       --batch_size 32 \
       --eval_batch_size 64 \
       --max_length 128 \
