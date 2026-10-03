@@ -41,6 +41,8 @@ class FFTLatentAttentionGatePooling(nn.Module):
         dc_only: bool = False,
         mean_residual: bool = False,
         mean_mix_init: float = 0.5,
+        mean_anchor_residual: bool = False,
+        mean_anchor_beta_init: float = 0.1,
     ):
         super().__init__()
 
@@ -74,6 +76,12 @@ class FFTLatentAttentionGatePooling(nn.Module):
         self.remove_dc = bool(remove_dc)
         self.dc_only = bool(dc_only)
         self.mean_residual = bool(mean_residual)
+        self.mean_anchor_residual = bool(mean_anchor_residual)
+
+        if self.mean_residual and self.mean_anchor_residual:
+            raise ValueError(
+                "mean_residual and mean_anchor_residual are mutually exclusive."
+            )
 
         if not (0.0 <= float(mean_mix_init) <= 1.0):
             raise ValueError(
@@ -88,6 +96,21 @@ class FFTLatentAttentionGatePooling(nn.Module):
             # [0, 1]. Runners exclude this scalar from weight decay.
             self.mean_mix_alpha = nn.Parameter(
                 torch.tensor(float(mean_mix_init))
+            )
+
+        if not (0.0 <= float(mean_anchor_beta_init) <= 1.0):
+            raise ValueError(
+                "mean_anchor_beta_init must be in [0, 1], "
+                f"got {mean_anchor_beta_init}"
+            )
+
+        if self.mean_anchor_residual:
+            # Mean-anchored complementary residual.
+            # beta=0 is exact Mean under cosine scoring. We initialize at a
+            # small positive beta so the FLaG residual branch receives
+            # gradient immediately, while training still starts near Mean.
+            self.mean_anchor_beta = nn.Parameter(
+                torch.tensor(float(mean_anchor_beta_init))
             )
 
         if self.remove_dc and self.dc_only:
@@ -516,18 +539,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
             )
         )
 
-        if self.mean_residual:
-            # Explicit Mean/DC safety path.
-            #
-            # Both branches are L2-normalized before interpolation. Under the
-            # cosine objectives used by STSB and Sprint this preserves each
-            # endpoint exactly:
-            #   alpha = 0 -> same cosine predictions as masked Mean pooling
-            #   alpha = 1 -> same cosine predictions as original FLaG
-            #
-            # Intermediate alpha values therefore test whether the model can
-            # retain the strong global-mean solution while adding frequency
-            # information from FLaG.
+        if self.mean_residual or self.mean_anchor_residual:
             mean_output = masked_mean_pooling(
                 features,
                 attention_mask,
@@ -547,26 +559,83 @@ class FFTLatentAttentionGatePooling(nn.Module):
                 eps=self.eps,
             )
 
-            alpha = torch.clamp(
-                self.mean_mix_alpha,
-                min=0.0,
-                max=1.0,
-            )
-
-            pooled_output = (
-                (1.0 - alpha) * mean_branch
-                + alpha * flag_branch
-            )
-
-            self._last_mean_mix_alpha = (
-                alpha.detach()
-            )
             self._last_mean_branch = (
                 mean_branch.detach()
             )
             self._last_flag_branch = (
                 flag_branch.detach()
             )
+
+            if self.mean_residual:
+                # Proposal 1.0: convex interpolation.
+                #
+                # alpha=0 -> exact Mean cosine endpoint.
+                # alpha=1 -> exact original-FLaG cosine endpoint.
+                alpha = torch.clamp(
+                    self.mean_mix_alpha,
+                    min=0.0,
+                    max=1.0,
+                )
+
+                pooled_output = (
+                    (1.0 - alpha) * mean_branch
+                    + alpha * flag_branch
+                )
+
+                self._last_mean_mix_alpha = (
+                    alpha.detach()
+                )
+
+            else:
+                # Proposal 1.1: Mean-anchored orthogonal residual.
+                #
+                # A naive form normalize(mean + beta * flag) is merely a
+                # reparameterization of Proposal 1.0 under cosine scoring.
+                # To create a genuinely different hypothesis class, remove
+                # the component of FLaG parallel to Mean and let FLaG add
+                # only complementary information:
+                #
+                #   r_perp = f - <f,m> m
+                #   z      = normalize(m + beta * r_perp)
+                #
+                # The Mean direction is therefore never cancelled by the
+                # residual branch. beta=0 is exact Mean.
+                alignment = (
+                    flag_branch
+                    * mean_branch
+                ).sum(
+                    dim=-1,
+                    keepdim=True,
+                )
+
+                residual = (
+                    flag_branch
+                    - alignment * mean_branch
+                )
+
+                beta = torch.clamp(
+                    self.mean_anchor_beta,
+                    min=0.0,
+                    max=1.0,
+                )
+
+                pooled_output = F.normalize(
+                    mean_branch
+                    + beta * residual,
+                    p=2,
+                    dim=-1,
+                    eps=self.eps,
+                )
+
+                self._last_mean_anchor_beta = (
+                    beta.detach()
+                )
+                self._last_orthogonal_residual = (
+                    residual.detach()
+                )
+                self._last_mean_flag_alignment = (
+                    alignment.detach()
+                )
 
         if return_pre_projection:
             return (
