@@ -367,13 +367,13 @@ def train(args):
     if args.remove_dc or args.dc_only:
         if args.pooling != "FLaG":
             raise ValueError(
-                "DC spectral controls are defined for matched FLaG only."
+                "DC spectral controls are defined for FLaG only."
             )
-        if not args.freeze_backbone:
-            raise ValueError(
-                "DC spectral controls require --freeze_backbone so the "
-                "backbone representation is identical across conditions."
-            )
+
+        # Both frozen- and unfrozen-backbone controls are valid:
+        # - frozen: isolates what is already readable from pretrained features;
+        # - unfrozen: matches the original STSB fine-tuning protocol and lets
+        #   RoBERTa adapt under the spectral constraint.
 
     # -----------------------------------------------------
     # Data
