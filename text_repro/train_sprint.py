@@ -140,6 +140,7 @@ class SprintEncoder(nn.Module):
         remove_dc=False,
         dc_only=False,
         mean_mix_init=0.5,
+        mean_anchor_beta_init=0.1,
     ):
         super().__init__()
 
@@ -203,6 +204,28 @@ class SprintEncoder(nn.Module):
                 dc_only=dc_only,
                 mean_residual=True,
                 mean_mix_init=mean_mix_init,
+            )
+
+        elif pooling == "FLaG_MeanAnchor":
+            # Proposal 1.1: protect Mean direction and let FLaG contribute
+            # only an orthogonal complementary residual.
+            self.pool = FFTLatentAttentionGatePooling(
+                d_model=d_model,
+                num_latents=8,
+                num_heads=4,
+                dropout=0.1,
+                time_pool="max",
+                gate_residual=True,
+                eps=1e-6,
+                use_gate=True,
+                use_latent=True,
+                post_pool_norm=False,
+                window_type=None,
+                fixed_fft_length=None,
+                remove_dc=remove_dc,
+                dc_only=dc_only,
+                mean_anchor_residual=True,
+                mean_anchor_beta_init=mean_anchor_beta_init,
             )
 
         elif pooling == "FLaG_PostNorm":
@@ -409,6 +432,7 @@ class SprintPairClassifier(nn.Module):
         remove_dc=False,
         dc_only=False,
         mean_mix_init=0.5,
+        mean_anchor_beta_init=0.1,
     ):
         super().__init__()
 
@@ -423,6 +447,7 @@ class SprintPairClassifier(nn.Module):
             remove_dc=remove_dc,
             dc_only=dc_only,
             mean_mix_init=mean_mix_init,
+            mean_anchor_beta_init=mean_anchor_beta_init,
         )
 
         self.head = CosineLogitHead()
@@ -868,6 +893,14 @@ def train(args):
         print("- alpha=0: Mean endpoint")
         print("- alpha=1: original FLaG endpoint")
 
+    if args.pooling == "FLaG_MeanAnchor":
+        print("\nMean-anchor FLaG:")
+        print("- base FLaG: published Sprint settings")
+        print("- protected Mean direction: True")
+        print("- FLaG contribution: orthogonal residual only")
+        print("- learnable beta init:", args.mean_anchor_beta_init)
+        print("- beta=0: exact Mean endpoint under cosine")
+
     if args.pooling == "FLaG_PostNorm":
         print("\nGlobal FLaG 2x2 control A:")
         print("- operator: global FFT")
@@ -1005,6 +1038,7 @@ def train(args):
         remove_dc=args.remove_dc,
         dc_only=args.dc_only,
         mean_mix_init=args.mean_mix_init,
+        mean_anchor_beta_init=args.mean_anchor_beta_init,
     ).to(device)
 
     total_params = sum(
@@ -1080,7 +1114,10 @@ def train(args):
             ):
                 continue
 
-            if name.endswith("mean_mix_alpha"):
+            if (
+                name.endswith("mean_mix_alpha")
+                or name.endswith("mean_anchor_beta")
+            ):
                 mean_mix_params.append(p)
             else:
                 non_backbone_params.append(p)
@@ -1122,7 +1159,10 @@ def train(args):
             if not p.requires_grad:
                 continue
 
-            if name.endswith("mean_mix_alpha"):
+            if (
+                name.endswith("mean_mix_alpha")
+                or name.endswith("mean_anchor_beta")
+            ):
                 mean_mix_params.append(p)
             else:
                 regular_trainable.append(p)
@@ -1445,6 +1485,15 @@ def train(args):
                 ).cpu()
             )
 
+        if hasattr(model.pool, "mean_anchor_beta"):
+            row["mean_anchor_beta"] = float(
+                torch.clamp(
+                    model.pool.mean_anchor_beta.detach(),
+                    0.0,
+                    1.0,
+                ).cpu()
+            )
+
         history.append(
             row
         )
@@ -1464,6 +1513,11 @@ def train(args):
             + (
                 f" | alpha={row['mean_mix_alpha']:.6f}"
                 if "mean_mix_alpha" in row
+                else ""
+            )
+            + (
+                f" | beta={row['mean_anchor_beta']:.6f}"
+                if "mean_anchor_beta" in row
                 else ""
             )
             + "\n"
@@ -1640,6 +1694,19 @@ def train(args):
         ),
         **(
             {
+                "mean_anchor_beta": float(
+                    torch.clamp(
+                        model.pool.mean_anchor_beta.detach(),
+                        0.0,
+                        1.0,
+                    ).cpu()
+                )
+            }
+            if hasattr(model.pool, "mean_anchor_beta")
+            else {}
+        ),
+        **(
+            {
                 "test_average_precision":
                     test_metrics["average_precision"],
                 "test_cosine_average_precision":
@@ -1744,6 +1811,7 @@ def main():
             "mean",
             "FLaG",
             "FLaG_MeanResidual",
+            "FLaG_MeanAnchor",
             "FLaG_PostNorm",
             "FLaG_NoDropout",
             "FLaG_E12Match",
@@ -1856,6 +1924,16 @@ def main():
         help=(
             "Initial alpha for FLaG_MeanResidual. alpha=0 is the Mean "
             "endpoint and alpha=1 the original FLaG endpoint under cosine."
+        ),
+    )
+
+    parser.add_argument(
+        "--mean_anchor_beta_init",
+        type=float,
+        default=0.1,
+        help=(
+            "Initial beta for FLaG_MeanAnchor. beta=0 is exact Mean; "
+            "default 0.1 starts close to Mean while training the residual."
         ),
     )
 
