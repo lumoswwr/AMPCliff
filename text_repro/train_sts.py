@@ -173,6 +173,7 @@ class SentenceEncoder(nn.Module):
             "FLaG_MeanResidual",
             "FLaG_MeanAnchor",
             "FLaG_AttnFreqGate",
+            "FLaG_MeanResidualAttnFreq",
             "FLaG_LearnedFreqGate",
         }:
 
@@ -198,7 +199,10 @@ class SentenceEncoder(nn.Module):
                 remove_dc=remove_dc,
                 dc_only=dc_only,
                 mean_residual=(
-                    pooling == "FLaG_MeanResidual"
+                    pooling in {
+                        "FLaG_MeanResidual",
+                        "FLaG_MeanResidualAttnFreq",
+                    }
                 ),
                 mean_mix_init=mean_mix_init,
                 mean_anchor_residual=(
@@ -206,7 +210,10 @@ class SentenceEncoder(nn.Module):
                 ),
                 mean_anchor_beta_init=mean_anchor_beta_init,
                 attention_frequency_gate=(
-                    pooling == "FLaG_AttnFreqGate"
+                    pooling in {
+                        "FLaG_AttnFreqGate",
+                        "FLaG_MeanResidualAttnFreq",
+                    }
                 ),
                 learned_frequency_gate=(
                     pooling == "FLaG_LearnedFreqGate"
@@ -903,6 +910,7 @@ def main():
             "FLaG_MeanResidual",
             "FLaG_MeanAnchor",
             "FLaG_AttnFreqGate",
+            "FLaG_MeanResidualAttnFreq",
             "FLaG_LearnedFreqGate",
             "STFT_FLaG",
             "STFT_FLaG_Pos",
