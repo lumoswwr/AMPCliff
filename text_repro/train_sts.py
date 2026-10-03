@@ -517,7 +517,7 @@ def train(args):
 
         if (
             name.endswith("mean_mix_alpha")
-            or name.endswith("mean_anchor_beta")
+            or name.endswith("mean_anchor_beta_logit")
         ):
             mean_mix_params.append(p)
         else:
@@ -716,12 +716,10 @@ def train(args):
                 ).cpu()
             )
 
-        if hasattr(model.pool, "mean_anchor_beta"):
+        if hasattr(model.pool, "mean_anchor_beta_logit"):
             row["mean_anchor_beta"] = float(
-                torch.clamp(
-                    model.pool.mean_anchor_beta.detach(),
-                    0.0,
-                    1.0,
+                torch.sigmoid(
+                    model.pool.mean_anchor_beta_logit.detach()
                 ).cpu()
             )
 
@@ -839,13 +837,11 @@ def train(args):
             {
                 "mean_anchor_beta": float(
                     torch.clamp(
-                        model.pool.mean_anchor_beta.detach(),
-                        0.0,
-                        1.0,
+                        model.pool.mean_anchor_beta_logit.detach()
                     ).cpu()
                 )
             }
-            if hasattr(model.pool, "mean_anchor_beta")
+            if hasattr(model.pool, "mean_anchor_beta_logit")
             else {}
         ),
     }
