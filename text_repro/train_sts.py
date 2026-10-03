@@ -172,6 +172,7 @@ class SentenceEncoder(nn.Module):
             "FLaG_Hann",
             "FLaG_MeanResidual",
             "FLaG_MeanAnchor",
+            "FLaG_AttnFreqGate",
         }:
 
             window_type = (
@@ -203,6 +204,9 @@ class SentenceEncoder(nn.Module):
                     pooling == "FLaG_MeanAnchor"
                 ),
                 mean_anchor_beta_init=mean_anchor_beta_init,
+                attention_frequency_gate=(
+                    pooling == "FLaG_AttnFreqGate"
+                ),
             )
         
         elif pooling in {
@@ -894,6 +898,7 @@ def main():
             "FLaG_Hann",
             "FLaG_MeanResidual",
             "FLaG_MeanAnchor",
+            "FLaG_AttnFreqGate",
             "STFT_FLaG",
             "STFT_FLaG_Pos",
         ],
