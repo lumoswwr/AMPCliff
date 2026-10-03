@@ -106,11 +106,23 @@ class FFTLatentAttentionGatePooling(nn.Module):
 
         if self.mean_anchor_residual:
             # Mean-anchored complementary residual.
-            # beta=0 is exact Mean under cosine scoring. We initialize at a
-            # small positive beta so the FLaG residual branch receives
-            # gradient immediately, while training still starts near Mean.
-            self.mean_anchor_beta = nn.Parameter(
-                torch.tensor(float(mean_anchor_beta_init))
+            #
+            # Parameterize beta with a sigmoid rather than hard-clamping a
+            # directly optimized scalar. This keeps beta strictly inside
+            # (0, 1) while preserving gradient near the boundaries, avoiding
+            # the dead-gradient saturation seen when a clamped beta crossed 1.
+            beta_init = float(mean_anchor_beta_init)
+            eps_beta = 1e-6
+            beta_init = min(
+                max(beta_init, eps_beta),
+                1.0 - eps_beta,
+            )
+            beta_logit_init = torch.log(
+                torch.tensor(beta_init)
+                / torch.tensor(1.0 - beta_init)
+            )
+            self.mean_anchor_beta_logit = nn.Parameter(
+                beta_logit_init
             )
 
         if self.remove_dc and self.dc_only:
@@ -613,10 +625,8 @@ class FFTLatentAttentionGatePooling(nn.Module):
                     - alignment * mean_branch
                 )
 
-                beta = torch.clamp(
-                    self.mean_anchor_beta,
-                    min=0.0,
-                    max=1.0,
+                beta = torch.sigmoid(
+                    self.mean_anchor_beta_logit
                 )
 
                 pooled_output = F.normalize(
