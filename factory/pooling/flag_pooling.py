@@ -4,6 +4,7 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .llm_pooling_dropin import masked_max_pooling, masked_mean_pooling
 
@@ -38,6 +39,8 @@ class FFTLatentAttentionGatePooling(nn.Module):
         fixed_fft_length: Optional[int] = None,
         remove_dc: bool = False,
         dc_only: bool = False,
+        mean_residual: bool = False,
+        mean_mix_init: float = 0.5,
     ):
         super().__init__()
 
@@ -70,6 +73,22 @@ class FFTLatentAttentionGatePooling(nn.Module):
         self.window_type = window_type
         self.remove_dc = bool(remove_dc)
         self.dc_only = bool(dc_only)
+        self.mean_residual = bool(mean_residual)
+
+        if not (0.0 <= float(mean_mix_init) <= 1.0):
+            raise ValueError(
+                "mean_mix_init must be in [0, 1], "
+                f"got {mean_mix_init}"
+            )
+
+        if self.mean_residual:
+            # Direct scalar parameter rather than sigmoid(logit), so the
+            # hypothesis space contains the exact endpoints alpha=0 (Mean)
+            # and alpha=1 (original FLaG). The forward pass clamps alpha to
+            # [0, 1]. Runners exclude this scalar from weight decay.
+            self.mean_mix_alpha = nn.Parameter(
+                torch.tensor(float(mean_mix_init))
+            )
 
         if self.remove_dc and self.dc_only:
             raise ValueError(
@@ -496,6 +515,58 @@ class FFTLatentAttentionGatePooling(nn.Module):
                 pooled_for_projection
             )
         )
+
+        if self.mean_residual:
+            # Explicit Mean/DC safety path.
+            #
+            # Both branches are L2-normalized before interpolation. Under the
+            # cosine objectives used by STSB and Sprint this preserves each
+            # endpoint exactly:
+            #   alpha = 0 -> same cosine predictions as masked Mean pooling
+            #   alpha = 1 -> same cosine predictions as original FLaG
+            #
+            # Intermediate alpha values therefore test whether the model can
+            # retain the strong global-mean solution while adding frequency
+            # information from FLaG.
+            mean_output = masked_mean_pooling(
+                features,
+                attention_mask,
+                eps=self.eps,
+            )
+
+            mean_branch = F.normalize(
+                mean_output,
+                p=2,
+                dim=-1,
+                eps=self.eps,
+            )
+            flag_branch = F.normalize(
+                pooled_output,
+                p=2,
+                dim=-1,
+                eps=self.eps,
+            )
+
+            alpha = torch.clamp(
+                self.mean_mix_alpha,
+                min=0.0,
+                max=1.0,
+            )
+
+            pooled_output = (
+                (1.0 - alpha) * mean_branch
+                + alpha * flag_branch
+            )
+
+            self._last_mean_mix_alpha = (
+                alpha.detach()
+            )
+            self._last_mean_branch = (
+                mean_branch.detach()
+            )
+            self._last_flag_branch = (
+                flag_branch.detach()
+            )
 
         if return_pre_projection:
             return (
