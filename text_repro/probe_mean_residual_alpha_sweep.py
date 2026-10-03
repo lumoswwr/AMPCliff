@@ -190,29 +190,39 @@ def sweep_stsb(model, val_loader, test_loader, device, alphas):
             val_loader,
             device,
         )
-        test_metrics, _, _ = evaluate_stsb(
-            model,
-            test_loader,
-            device,
-        )
-
         rows.append({
             "task": "STSB",
             "alpha": float(alpha),
             "val_spearman": float(val_metrics["spearman"]),
             "val_pearson": float(val_metrics["pearson"]),
-            "test_spearman": float(test_metrics["spearman"]),
-            "test_pearson": float(test_metrics["pearson"]),
         })
 
         print(
             f"STSB alpha={alpha:.2f} | "
-            f"val Spearman={val_metrics['spearman']:.6f} | "
-            f"test Spearman={test_metrics['spearman']:.6f}"
+            f"val Spearman={val_metrics['spearman']:.6f}"
         )
 
+    df = pd.DataFrame(rows)
+    best = df.loc[df["val_spearman"].idxmax()]
+    best_alpha = float(best["alpha"])
+
+    model.pool.mean_mix_alpha.fill_(best_alpha)
+    test_metrics, _, _ = evaluate_stsb(
+        model,
+        test_loader,
+        device,
+    )
+
     model.pool.mean_mix_alpha.fill_(learned_alpha)
-    return rows, learned_alpha
+    return (
+        rows,
+        learned_alpha,
+        best_alpha,
+        {
+            "test_spearman": float(test_metrics["spearman"]),
+            "test_pearson": float(test_metrics["pearson"]),
+        },
+    )
 
 
 @torch.no_grad()
@@ -235,12 +245,6 @@ def sweep_sprint(model, val_loader, test_loader, device, alphas):
             val_loader,
             device,
         )
-        test_metrics, _, _, _ = evaluate_sprint(
-            model,
-            test_loader,
-            device,
-        )
-
         rows.append({
             "task": "Sprint",
             "alpha": float(alpha),
@@ -248,20 +252,36 @@ def sweep_sprint(model, val_loader, test_loader, device, alphas):
             "val_cosine_ap": float(
                 val_metrics["cosine_average_precision"]
             ),
-            "test_ap": float(test_metrics["average_precision"]),
-            "test_cosine_ap": float(
-                test_metrics["cosine_average_precision"]
-            ),
         })
 
         print(
             f"Sprint alpha={alpha:.2f} | "
-            f"val AP={val_metrics['average_precision']:.6f} | "
-            f"test AP={test_metrics['average_precision']:.6f}"
+            f"val AP={val_metrics['average_precision']:.6f}"
         )
 
+    df = pd.DataFrame(rows)
+    best = df.loc[df["val_ap"].idxmax()]
+    best_alpha = float(best["alpha"])
+
+    model.pool.mean_mix_alpha.fill_(best_alpha)
+    test_metrics, _, _, _ = evaluate_sprint(
+        model,
+        test_loader,
+        device,
+    )
+
     model.pool.mean_mix_alpha.fill_(learned_alpha)
-    return rows, learned_alpha
+    return (
+        rows,
+        learned_alpha,
+        best_alpha,
+        {
+            "test_ap": float(test_metrics["average_precision"]),
+            "test_cosine_ap": float(
+                test_metrics["cosine_average_precision"]
+            ),
+        },
+    )
 
 
 def main():
@@ -271,7 +291,7 @@ def main():
         "--alphas",
         type=float,
         nargs="+",
-        default=[i / 10 for i in range(11)],
+        default=[i / 20 for i in range(21)],
     )
     p.add_argument("--skip_stsb", action="store_true")
     p.add_argument("--skip_sprint", action="store_true")
@@ -312,7 +332,12 @@ def main():
             args.seed,
             device,
         )
-        rows, learned_alpha = sweep_stsb(
+        (
+            rows,
+            learned_alpha,
+            best_alpha,
+            best_test,
+        ) = sweep_stsb(
             model,
             val_loader,
             test_loader,
@@ -333,9 +358,9 @@ def main():
         )
         print(
             "STSB best grid alpha by validation Spearman="
-            f"{best['alpha']:.2f} | "
+            f"{best_alpha:.2f} | "
             f"val={best['val_spearman']:.6f} | "
-            f"test={best['test_spearman']:.6f}"
+            f"test={best_test['test_spearman']:.6f}"
         )
         print("Saved:", out)
 
@@ -352,7 +377,12 @@ def main():
             args.seed,
             device,
         )
-        rows, learned_alpha = sweep_sprint(
+        (
+            rows,
+            learned_alpha,
+            best_alpha,
+            best_test,
+        ) = sweep_sprint(
             model,
             val_loader,
             test_loader,
@@ -373,9 +403,9 @@ def main():
         )
         print(
             "Sprint best grid alpha by validation AP="
-            f"{best['alpha']:.2f} | "
+            f"{best_alpha:.2f} | "
             f"val={best['val_ap']:.6f} | "
-            f"test={best['test_ap']:.6f}"
+            f"test={best_test['test_ap']:.6f}"
         )
         print("Saved:", out)
 
