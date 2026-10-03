@@ -145,6 +145,7 @@ class SentenceEncoder(nn.Module):
         freeze_backbone=False,
         remove_dc=False,
         dc_only=False,
+        mean_mix_init=0.5,
     ):
         super().__init__()
 
@@ -165,7 +166,7 @@ class SentenceEncoder(nn.Module):
         if pooling == "mean":
             self.pool = MeanPooling()
 
-        elif pooling in {"FLaG", "FLaG_Hann"}:
+        elif pooling in {"FLaG", "FLaG_Hann", "FLaG_MeanResidual"}:
 
             window_type = (
                 "hann"
@@ -188,6 +189,10 @@ class SentenceEncoder(nn.Module):
                 fixed_fft_length=fixed_fft_length,
                 remove_dc=remove_dc,
                 dc_only=dc_only,
+                mean_residual=(
+                    pooling == "FLaG_MeanResidual"
+                ),
+                mean_mix_init=mean_mix_init,
             )
         
         elif pooling in {
@@ -455,6 +460,7 @@ def train(args):
         freeze_backbone=args.freeze_backbone,
         remove_dc=args.remove_dc,
         dc_only=args.dc_only,
+        mean_mix_init=args.mean_mix_init,
     ).to(device)
 
     print("\nBackbone hidden size:",
@@ -491,16 +497,30 @@ def train(args):
             "weight_decay": args.weight_decay,
         })
 
-    pool_params = [
-        p for p in model.pool.parameters()
-        if p.requires_grad
-    ]
+    mean_mix_params = []
+    pool_params = []
+
+    for name, p in model.pool.named_parameters():
+        if not p.requires_grad:
+            continue
+
+        if name.endswith("mean_mix_alpha"):
+            mean_mix_params.append(p)
+        else:
+            pool_params.append(p)
 
     if pool_params:
         parameter_groups.append({
             "params": pool_params,
             "lr": args.pool_lr,
             "weight_decay": args.weight_decay,
+        })
+
+    if mean_mix_params:
+        parameter_groups.append({
+            "params": mean_mix_params,
+            "lr": args.pool_lr,
+            "weight_decay": 0.0,
         })
 
     if not parameter_groups:
@@ -673,6 +693,15 @@ def train(args):
                 val_metrics["pearson"],
         }
 
+        if hasattr(model.pool, "mean_mix_alpha"):
+            row["mean_mix_alpha"] = float(
+                torch.clamp(
+                    model.pool.mean_mix_alpha.detach(),
+                    0.0,
+                    1.0,
+                ).cpu()
+            )
+
         history.append(row)
 
         print(
@@ -681,7 +710,13 @@ def train(args):
             f"val Spearman="
             f"{val_metrics['spearman']:.6f} | "
             f"val Pearson="
-            f"{val_metrics['pearson']:.6f}\n"
+            f"{val_metrics['pearson']:.6f}"
+            + (
+                f" | alpha={row['mean_mix_alpha']:.6f}"
+                if "mean_mix_alpha" in row
+                else ""
+            )
+            + "\n"
         )
 
         if (
@@ -759,6 +794,19 @@ def train(args):
             test_metrics["spearman"],
         "test_pearson":
             test_metrics["pearson"],
+        **(
+            {
+                "mean_mix_alpha": float(
+                    torch.clamp(
+                        model.pool.mean_mix_alpha.detach(),
+                        0.0,
+                        1.0,
+                    ).cpu()
+                )
+            }
+            if hasattr(model.pool, "mean_mix_alpha")
+            else {}
+        ),
     }
 
     print("\n================================")
@@ -803,7 +851,14 @@ def main():
 
     parser.add_argument(
         "--pooling",
-        choices=["mean", "FLaG", "FLaG_Hann", "STFT_FLaG", "STFT_FLaG_Pos"],
+        choices=[
+            "mean",
+            "FLaG",
+            "FLaG_Hann",
+            "FLaG_MeanResidual",
+            "STFT_FLaG",
+            "STFT_FLaG_Pos",
+        ],
         required=True,
     )
 
@@ -912,6 +967,17 @@ def main():
             "Exact FLaG spectral DC-only control used throughout training "
             "and evaluation. Keep the actual rFFT k=0 coefficient and set "
             "every k>0 coefficient to zero."
+        ),
+    )
+
+    parser.add_argument(
+        "--mean_mix_init",
+        type=float,
+        default=0.5,
+        help=(
+            "Initial alpha for FLaG_MeanResidual. alpha=0 is exact Mean "
+            "under cosine scoring; alpha=1 is exact original FLaG. "
+            "Default 0.5 gives both branches gradient from the start."
         ),
     )
 
