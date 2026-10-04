@@ -1,0 +1,157 @@
+
+Tokenizing 25,417 distinct texts using LOCAL tokenizer.
+
+E12 has one valid frame when actual token length <=16.
+Lengths are BEFORE truncation, with special tokens but no batch padding.
+Percentages count sentence PAIRS, not distinct questions.
+
+--- SPRINT/train (90,900 pairs) ---
+  distinct sentence1=1,000, sentence2=7,932
+  Q1 chars          mean= 65.2  p50=  64  p90=  94  p95= 100  max= 139
+  Q2 chars          mean= 53.7  p50=  51  p90=  76  p95=  83  max= 223
+  Q1 words          mean= 13.3  p50=  14  p90=  19  p95=  21  max=  31
+  Q2 words          mean= 10.4  p50=  10  p90=  15  p95=  16  max=  42
+  Q1 RoBERTa tokens mean= 17.2  p50=  17  p90=  24  p95=  25  max=  40
+  Q2 RoBERTa tokens mean= 14.7  p50=  14  p90=  21  p95=  22  max=  49
+  All RoBERTa toks  mean= 15.9  p50=  15  p90=  22  p95=  24  max=  49
+  Token lengths include <s> and </s> and exclude batch padding:
+    <=   8: Q1= 3.11% Q2= 3.06% both-in-pair= 0.09%
+    <=  16: Q1=44.11% Q2=70.94% both-in-pair=31.41%
+    <=  32: Q1=99.61% Q2=99.31% both-in-pair=98.92%
+    <=  64: Q1=100.00% Q2=100.00% both-in-pair=100.00%
+    <= 128: Q1=100.00% Q2=100.00% both-in-pair=100.00%
+    >128 (truncated during training): Q1=0.00%, Q2=0.00%
+  labels: {0: 90000, 1: 900}; positive=0.990%
+  label=0, pairs=90,000: Q1-token p50=17, Q2-token p50=14, both<=16=31.36%
+  label=1, pairs=900: Q1-token p50=17, Q2-token p50=14, both<=16=36.11%
+
+--- SPRINT/validation (10,100 pairs) ---
+  distinct sentence1=1,000, sentence2=5,738
+  Q1 chars          mean= 65.2  p50=  64  p90=  94  p95= 100  max= 139
+  Q2 chars          mean= 53.9  p50=  51  p90=  77  p95=  84  max= 223
+  Q1 words          mean= 13.3  p50=  14  p90=  19  p95=  21  max=  31
+  Q2 words          mean= 10.4  p50=  10  p90=  15  p95=  16  max=  42
+  Q1 RoBERTa tokens mean= 17.2  p50=  17  p90=  24  p95=  25  max=  40
+  Q2 RoBERTa tokens mean= 14.8  p50=  14  p90=  21  p95=  22  max=  49
+  All RoBERTa toks  mean= 16.0  p50=  15  p90=  22  p95=  24  max=  49
+  Token lengths include <s> and </s> and exclude batch padding:
+    <=   8: Q1= 3.03% Q2= 3.00% both-in-pair= 0.08%
+    <=  16: Q1=43.97% Q2=69.83% both-in-pair=30.53%
+    <=  32: Q1=99.54% Q2=99.38% both-in-pair=98.95%
+    <=  64: Q1=100.00% Q2=100.00% both-in-pair=100.00%
+    <= 128: Q1=100.00% Q2=100.00% both-in-pair=100.00%
+    >128 (truncated during training): Q1=0.00%, Q2=0.00%
+  labels: {0: 10000, 1: 100}; positive=0.990%
+  label=0, pairs=10,000: Q1-token p50=17, Q2-token p50=14, both<=16=30.48%
+  label=1, pairs=100: Q1-token p50=18, Q2-token p50=14, both<=16=36.00%
+
+--- SPRINT/test (101,000 pairs) ---
+  distinct sentence1=1,000, sentence2=7,932
+  Q1 chars          mean= 67.9  p50=  65  p90=  99  p95= 110  max= 157
+  Q2 chars          mean= 53.8  p50=  50  p90=  76  p95=  84  max= 223
+  Q1 words          mean= 13.6  p50=  13  p90=  21  p95=  23  max=  35
+  Q2 words          mean= 10.4  p50=  10  p90=  15  p95=  16  max=  42
+  Q1 RoBERTa tokens mean= 17.8  p50=  17  p90=  25  p95=  29  max=  39
+  Q2 RoBERTa tokens mean= 14.7  p50=  14  p90=  21  p95=  22  max=  49
+  All RoBERTa toks  mean= 16.2  p50=  15  p90=  23  p95=  26  max=  49
+  Token lengths include <s> and </s> and exclude batch padding:
+    <=   8: Q1= 1.40% Q2= 2.92% both-in-pair= 0.04%
+    <=  16: Q1=47.50% Q2=70.84% both-in-pair=33.71%
+    <=  32: Q1=98.30% Q2=99.25% both-in-pair=97.56%
+    <=  64: Q1=100.00% Q2=100.00% both-in-pair=100.00%
+    <= 128: Q1=100.00% Q2=100.00% both-in-pair=100.00%
+    >128 (truncated during training): Q1=0.00%, Q2=0.00%
+  labels: {0: 100000, 1: 1000}; positive=0.990%
+  label=0, pairs=100,000: Q1-token p50=17, Q2-token p50=14, both<=16=33.68%
+  label=1, pairs=1,000: Q1-token p50=17, Q2-token p50=14, both<=16=37.20%
+
+=== Sprint examples (official test) ===
+
+  Label 1 / short, both<=16: 372 candidates
+    Q1 [ 14 tokens]: Process for replacing a SD card on my LG X power .
+    Q2 [ 12 tokens]: Install or replace your SD card - LG X power
+    Q1 [ 12 tokens]: HTC One M9 backup and syncing tutorial
+    Q2 [ 13 tokens]: Change the backup and sync settings - HTC One M9
+
+  Label 1 / longer, either>32: 22 candidates
+    Q1 [ 16 tokens]: How to save the Wi-Fi network info on my Galaxy Note II
+    Q2 [ 34 tokens]: Do I have to re-enter my Wi-Fi provider information on my Samsung Galaxy Note II each time I get to a spot where it 's available ?
+    Q1 [ 34 tokens]: Where can I locate the screen timeout settings so I can change it to a shorter time period in order to save the battery life on my Kyocera Echo ?
+    Q2 [ 11 tokens]: Conserve battery life - Kyocera Echo
+
+  Label 1 / typical: 1,000 candidates
+    Q1 [ 17 tokens]: Tips for turning on the bluetooth on the Kyocera Duraplus
+    Q2 [ 14 tokens]: Turn Bluetooth on or off - Kyocera DuraPlus
+    Q1 [ 17 tokens]: How to clear the browser cache on the LG G Pad F7.0
+    Q2 [ 14 tokens]: Clear browser cache on your LG G Pad F7.0
+
+  Label 0 / short, both<=16: 33,680 candidates
+    Q1 [ 14 tokens]: How to send/receive email on the LG G3
+    Q2 [  9 tokens]: How does Daydream VR work ?
+    Q1 [ 11 tokens]: How to fix unresponsive Apple iPhone 5s
+    Q2 [ 13 tokens]: Send or receive a picture with text - Palm Pixi
+
+  Label 0 / longer, either>32: 2,441 candidates
+    Q1 [ 31 tokens]: I do n't like some of the widgets on my HTC EVO Shift ( TM ) 4G homscreen , is there a remove option ?
+    Q2 [ 36 tokens]: Do I have to re-enter my Wi-Fi provider information on my Samsung Galaxy J3 Emerge each time I get to a spot where it 's available ?
+    Q1 [ 37 tokens]: How can I save my Wifi provider information on my Sharp AQUOS Crystal to avoid re-entering it every time I get to a spot that it is available ?
+    Q2 [ 16 tokens]: Troubleshoot issues related to the touchscreen on your Moto E
+
+  Label 0 / typical: 100,000 candidates
+    Q1 [ 17 tokens]: Tips for turning on the bluetooth on the Kyocera Duraplus
+    Q2 [ 14 tokens]: Troubleshoot charging issues on your LG G4
+    Q1 [ 17 tokens]: Tips for turning on the bluetooth on the Kyocera Duraplus
+    Q2 [ 14 tokens]: Send or receive a text - Kyocera KONA
+
+=== STSB for comparison ===
+
+--- STSB/train (5,749 pairs) ---
+  distinct sentence1=5,436, sentence2=5,419
+  Q1 chars          mean= 57.8  p50=  47  p90= 109  p95= 138  max= 368
+  Q2 chars          mean= 57.5  p50=  47  p90= 108  p95= 135  max= 311
+  Q1 words          mean= 10.0  p50=   8  p90=  18  p95=  22  max=  56
+  Q2 words          mean=  9.9  p50=   8  p90=  18  p95=  22  max=  48
+  Q1 RoBERTa tokens mean= 14.6  p50=  12  p90=  26  p95=  31  max=  74
+  Q2 RoBERTa tokens mean= 14.5  p50=  12  p90=  26  p95=  31  max=  67
+  All RoBERTa toks  mean= 14.6  p50=  12  p90=  26  p95=  31  max=  74
+  Token lengths include <s> and </s> and exclude batch padding:
+    <=   8: Q1= 9.67% Q2=10.02% both-in-pair= 3.84%
+    <=  16: Q1=75.75% Q2=74.95% both-in-pair=71.02%
+    <=  32: Q1=95.89% Q2=96.21% both-in-pair=94.28%
+    <=  64: Q1=99.95% Q2=99.98% both-in-pair=99.93%
+    <= 128: Q1=100.00% Q2=100.00% both-in-pair=100.00%
+    >128 (truncated during training): Q1=0.00%, Q2=0.00%
+
+--- STSB/validation (1,500 pairs) ---
+  distinct sentence1=1,474, sentence2=1,467
+  Q1 chars          mean= 64.3  p50=  55  p90= 111  p95= 128  max= 200
+  Q2 chars          mean= 63.7  p50=  55  p90= 111  p95= 127  max= 186
+  Q1 words          mean= 11.4  p50=  10  p90=  19  p95=  21  max=  29
+  Q2 words          mean= 11.3  p50=  10  p90=  19  p95=  21  max=  29
+  Q1 RoBERTa tokens mean= 16.1  p50=  14  p90=  27  p95=  30  max=  44
+  Q2 RoBERTa tokens mean= 16.1  p50=  14  p90=  26  p95=  31  max=  61
+  All RoBERTa toks  mean= 16.1  p50=  14  p90=  26  p95=  30  max=  61
+  Token lengths include <s> and </s> and exclude batch padding:
+    <=   8: Q1= 7.47% Q2= 7.73% both-in-pair= 3.33%
+    <=  16: Q1=59.47% Q2=61.67% both-in-pair=53.60%
+    <=  32: Q1=96.47% Q2=96.53% both-in-pair=94.27%
+    <=  64: Q1=100.00% Q2=100.00% both-in-pair=100.00%
+    <= 128: Q1=100.00% Q2=100.00% both-in-pair=100.00%
+    >128 (truncated during training): Q1=0.00%, Q2=0.00%
+
+--- STSB/test (1,379 pairs) ---
+  distinct sentence1=1,256, sentence2=1,337
+  Q1 chars          mean= 53.7  p50=  44  p90= 101  p95= 126  max= 215
+  Q2 chars          mean= 53.5  p50=  43  p90= 101  p95= 128  max= 199
+  Q1 words          mean=  9.8  p50=   8  p90=  17  p95=  21  max=  30
+  Q2 words          mean=  9.8  p50=   8  p90=  18  p95=  21  max=  30
+  Q1 RoBERTa tokens mean= 14.2  p50=  12  p90=  24  p95=  30  max=  45
+  Q2 RoBERTa tokens mean= 14.1  p50=  12  p90=  24  p95=  30  max=  43
+  All RoBERTa toks  mean= 14.1  p50=  12  p90=  24  p95=  30  max=  45
+  Token lengths include <s> and </s> and exclude batch padding:
+    <=   8: Q1=12.04% Q2=11.46% both-in-pair= 6.16%
+    <=  16: Q1=75.92% Q2=76.43% both-in-pair=70.99%
+    <=  32: Q1=96.23% Q2=96.66% both-in-pair=94.63%
+    <=  64: Q1=100.00% Q2=100.00% both-in-pair=100.00%
+    <= 128: Q1=100.00% Q2=100.00% both-in-pair=100.00%
+    >128 (truncated during training): Q1=0.00%, Q2=0.00%

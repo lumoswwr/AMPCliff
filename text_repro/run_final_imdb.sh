@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
+export PYTHONPATH=$(dirname $(pwd)):$PYTHONPATH
 set -e
+
 
 python text_repro/train_imdb.py \
   --pooling mean \
