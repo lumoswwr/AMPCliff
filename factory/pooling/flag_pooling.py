@@ -44,6 +44,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
         mean_anchor_residual: bool = False,
         mean_anchor_beta_init: float = 0.1,
         mean_anchor_unbounded: bool = False,
+        mean_alignment_anchor: bool = False,
         attention_frequency_gate: bool = False,
         learned_frequency_gate: bool = False,
         learned_frequency_hidden: int = 256,
@@ -82,6 +83,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
         self.mean_residual = bool(mean_residual)
         self.mean_anchor_residual = bool(mean_anchor_residual)
         self.mean_anchor_unbounded = bool(mean_anchor_unbounded)
+        self.mean_alignment_anchor = bool(mean_alignment_anchor)
         self.attention_frequency_gate = bool(attention_frequency_gate)
         self.learned_frequency_gate = bool(learned_frequency_gate)
         self.learned_frequency_hidden = int(learned_frequency_hidden)
@@ -118,6 +120,11 @@ class FFTLatentAttentionGatePooling(nn.Module):
                 "mean_anchor_unbounded=True requires mean_anchor_residual=True."
             )
 
+        if self.mean_alignment_anchor and not self.mean_anchor_residual:
+            raise ValueError(
+                "mean_alignment_anchor=True requires mean_anchor_residual=True."
+            )
+
         if not (0.0 <= float(mean_mix_init) <= 1.0):
             raise ValueError(
                 "mean_mix_init must be in [0, 1], "
@@ -147,7 +154,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
             # Sprint's previous beta≈1 result was limited by tanh saturation.
             beta_init = float(mean_anchor_beta_init)
 
-            if self.mean_anchor_unbounded:
+            if self.mean_anchor_unbounded or self.mean_alignment_anchor:
                 self.mean_anchor_beta_unbounded = nn.Parameter(
                     torch.tensor(beta_init)
                 )
@@ -868,20 +875,51 @@ class FFTLatentAttentionGatePooling(nn.Module):
                     - alignment * mean_branch
                 )
 
-                if self.mean_anchor_unbounded:
+                if (
+                    self.mean_anchor_unbounded
+                    or self.mean_alignment_anchor
+                ):
                     beta = self.mean_anchor_beta_unbounded
                 else:
                     beta = torch.tanh(
                         self.mean_anchor_beta_raw
                     )
 
-                pooled_output = F.normalize(
-                    mean_branch
-                    + beta * residual,
-                    p=2,
-                    dim=-1,
-                    eps=self.eps,
-                )
+                if self.mean_alignment_anchor:
+                    # Alignment-aware anchor:
+                    #
+                    #   a = <f,m>
+                    #   r = f - a m
+                    #   z = normalize((1+a)m + beta r)
+                    #
+                    # If f is nearly orthogonal to m (a≈0), the Mean axis is
+                    # retained. If f is nearly opposite to m (a≈-1), the Mean
+                    # axis is automatically suppressed. beta=1 reproduces the
+                    # direction of m+f exactly; beta=0 is Mean-equivalent
+                    # except for the degenerate exact a=-1 case, protected by
+                    # a tiny positive floor.
+                    mean_axis_scale = (
+                        1.0 + alignment
+                    ).clamp_min(self.eps)
+
+                    pooled_output = F.normalize(
+                        mean_axis_scale * mean_branch
+                        + beta * residual,
+                        p=2,
+                        dim=-1,
+                        eps=self.eps,
+                    )
+                    self._last_mean_axis_scale = (
+                        mean_axis_scale.detach()
+                    )
+                else:
+                    pooled_output = F.normalize(
+                        mean_branch
+                        + beta * residual,
+                        p=2,
+                        dim=-1,
+                        eps=self.eps,
+                    )
 
                 self._last_mean_anchor_beta = (
                     beta.detach()
