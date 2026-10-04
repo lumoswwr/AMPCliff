@@ -109,7 +109,7 @@ def collect_stsb(seed,device):
 
     model=SentenceEncoder(
         cfg["model_path"],
-        "FLaG_AlignmentAnchorStopGradStopGrad",
+        "FLaG_AlignmentAnchorStopGrad",
         stft_win_length=int(cfg["stft_win_length"]),
         stft_hop_length=int(cfg["stft_hop_length"]),
         stft_window_type=cfg["stft_window_type"],
@@ -171,7 +171,7 @@ def collect_sprint(seed,device):
 
     model=SprintPairClassifier(
         model_path=cfg["model_path"],
-        pooling="FLaG_AlignmentAnchorStopGradStopGrad",
+        pooling="FLaG_AlignmentAnchorStopGrad",
         stft_win_length=int(cfg["stft_win_length"]),
         stft_hop_length=int(cfg["stft_hop_length"]),
         stft_window_type=cfg["stft_window_type"],
