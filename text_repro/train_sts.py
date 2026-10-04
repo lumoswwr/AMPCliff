@@ -172,6 +172,7 @@ class SentenceEncoder(nn.Module):
             "FLaG_Hann",
             "FLaG_MeanResidual",
             "FLaG_MeanAnchor",
+            "FLaG_MeanAnchorFree",
             "FLaG_AttnFreqGate",
             "FLaG_MeanResidualAttnFreq",
             "FLaG_LearnedFreqGate",
@@ -206,9 +207,15 @@ class SentenceEncoder(nn.Module):
                 ),
                 mean_mix_init=mean_mix_init,
                 mean_anchor_residual=(
-                    pooling == "FLaG_MeanAnchor"
+                    pooling in {
+                        "FLaG_MeanAnchor",
+                        "FLaG_MeanAnchorFree",
+                    }
                 ),
                 mean_anchor_beta_init=mean_anchor_beta_init,
+                mean_anchor_unbounded=(
+                    pooling == "FLaG_MeanAnchorFree"
+                ),
                 attention_frequency_gate=(
                     pooling in {
                         "FLaG_AttnFreqGate",
@@ -533,6 +540,7 @@ def train(args):
         if (
             name.endswith("mean_mix_alpha")
             or name.endswith("mean_anchor_beta_raw")
+            or name.endswith("mean_anchor_beta_unbounded")
         ):
             mean_mix_params.append(p)
         else:
@@ -737,6 +745,10 @@ def train(args):
                     model.pool.mean_anchor_beta_raw.detach()
                 ).cpu()
             )
+        elif hasattr(model.pool, "mean_anchor_beta_unbounded"):
+            row["mean_anchor_beta"] = float(
+                model.pool.mean_anchor_beta_unbounded.detach().cpu()
+            )
 
         history.append(row)
 
@@ -857,7 +869,15 @@ def train(args):
                 )
             }
             if hasattr(model.pool, "mean_anchor_beta_raw")
-            else {}
+            else (
+                {
+                    "mean_anchor_beta": float(
+                        model.pool.mean_anchor_beta_unbounded.detach().cpu()
+                    )
+                }
+                if hasattr(model.pool, "mean_anchor_beta_unbounded")
+                else {}
+            )
         ),
     }
 
@@ -909,6 +929,7 @@ def main():
             "FLaG_Hann",
             "FLaG_MeanResidual",
             "FLaG_MeanAnchor",
+            "FLaG_MeanAnchorFree",
             "FLaG_AttnFreqGate",
             "FLaG_MeanResidualAttnFreq",
             "FLaG_LearnedFreqGate",
