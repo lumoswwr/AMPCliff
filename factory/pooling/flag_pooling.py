@@ -43,6 +43,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
         mean_mix_init: float = 0.5,
         mean_anchor_residual: bool = False,
         mean_anchor_beta_init: float = 0.1,
+        mean_anchor_unbounded: bool = False,
         attention_frequency_gate: bool = False,
         learned_frequency_gate: bool = False,
         learned_frequency_hidden: int = 256,
@@ -80,6 +81,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
         self.dc_only = bool(dc_only)
         self.mean_residual = bool(mean_residual)
         self.mean_anchor_residual = bool(mean_anchor_residual)
+        self.mean_anchor_unbounded = bool(mean_anchor_unbounded)
         self.attention_frequency_gate = bool(attention_frequency_gate)
         self.learned_frequency_gate = bool(learned_frequency_gate)
         self.learned_frequency_hidden = int(learned_frequency_hidden)
@@ -111,6 +113,11 @@ class FFTLatentAttentionGatePooling(nn.Module):
                 "mean_residual and mean_anchor_residual are mutually exclusive."
             )
 
+        if self.mean_anchor_unbounded and not self.mean_anchor_residual:
+            raise ValueError(
+                "mean_anchor_unbounded=True requires mean_anchor_residual=True."
+            )
+
         if not (0.0 <= float(mean_mix_init) <= 1.0):
             raise ValueError(
                 "mean_mix_init must be in [0, 1], "
@@ -135,22 +142,26 @@ class FFTLatentAttentionGatePooling(nn.Module):
         if self.mean_anchor_residual:
             # Mean-anchored complementary residual.
             #
-            # Use a tanh-parameterized beta instead of a hard-clamped scalar.
-            # This preserves an exact Mean endpoint at beta=0 with nonzero
-            # gradient, avoids dead gradients at a clamp boundary, and keeps
-            # |beta|<1. A negative beta is still safe because the residual is
-            # orthogonal to Mean and therefore cannot cancel the Mean axis.
+            # Bounded version: beta=tanh(raw), so |beta|<1.
+            # Unbounded control: beta is learned directly. This tests whether
+            # Sprint's previous beta≈1 result was limited by tanh saturation.
             beta_init = float(mean_anchor_beta_init)
-            beta_init = min(
-                max(beta_init, -0.999999),
-                0.999999,
-            )
-            beta_raw_init = torch.atanh(
-                torch.tensor(beta_init)
-            )
-            self.mean_anchor_beta_raw = nn.Parameter(
-                beta_raw_init
-            )
+
+            if self.mean_anchor_unbounded:
+                self.mean_anchor_beta_unbounded = nn.Parameter(
+                    torch.tensor(beta_init)
+                )
+            else:
+                beta_init = min(
+                    max(beta_init, -0.999999),
+                    0.999999,
+                )
+                beta_raw_init = torch.atanh(
+                    torch.tensor(beta_init)
+                )
+                self.mean_anchor_beta_raw = nn.Parameter(
+                    beta_raw_init
+                )
 
         if self.remove_dc and self.dc_only:
             raise ValueError(
@@ -857,9 +868,12 @@ class FFTLatentAttentionGatePooling(nn.Module):
                     - alignment * mean_branch
                 )
 
-                beta = torch.tanh(
-                    self.mean_anchor_beta_raw
-                )
+                if self.mean_anchor_unbounded:
+                    beta = self.mean_anchor_beta_unbounded
+                else:
+                    beta = torch.tanh(
+                        self.mean_anchor_beta_raw
+                    )
 
                 pooled_output = F.normalize(
                     mean_branch
