@@ -276,6 +276,32 @@ class SprintEncoder(nn.Module):
                 mean_alignment_anchor=True,
             )
 
+        elif pooling == "FLaG_AlignmentAnchorStopGrad":
+            # Same forward geometry as FLaG_AlignmentAnchor, but stop the
+            # gradient through a=<m,f>. This prevents the model from directly
+            # optimizing the routing coefficient by pushing alignment toward
+            # -1 while retaining the sample-adaptive forward value.
+            self.pool = FFTLatentAttentionGatePooling(
+                d_model=d_model,
+                num_latents=8,
+                num_heads=4,
+                dropout=0.1,
+                time_pool="max",
+                gate_residual=True,
+                eps=1e-6,
+                use_gate=True,
+                use_latent=True,
+                post_pool_norm=False,
+                window_type=None,
+                fixed_fft_length=None,
+                remove_dc=remove_dc,
+                dc_only=dc_only,
+                mean_anchor_residual=True,
+                mean_anchor_beta_init=mean_anchor_beta_init,
+                mean_alignment_anchor=True,
+                mean_alignment_stopgrad=True,
+            )
+
         elif pooling == "FLaG_AttnFreqGate":
             # Proposal 2: derive one scalar gate per frequency token from the
             # existing latent-attention weights, while retaining the original
@@ -1950,6 +1976,7 @@ def main():
             "FLaG_MeanAnchor",
             "FLaG_MeanAnchorFree",
             "FLaG_AlignmentAnchor",
+            "FLaG_AlignmentAnchorStopGrad",
             "FLaG_AttnFreqGate",
             "FLaG_MeanResidualAttnFreq",
             "FLaG_LearnedFreqGate",
