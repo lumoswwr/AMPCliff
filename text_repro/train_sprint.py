@@ -228,6 +228,30 @@ class SprintEncoder(nn.Module):
                 mean_anchor_beta_init=mean_anchor_beta_init,
             )
 
+        elif pooling == "FLaG_MeanAnchorFree":
+            # Proposal 1.2: same Mean-anchored orthogonal residual as
+            # FLaG_MeanAnchor, but beta is direct and unbounded. This tests
+            # whether the bounded model's Sprint beta≈1 was ceiling-limited.
+            self.pool = FFTLatentAttentionGatePooling(
+                d_model=d_model,
+                num_latents=8,
+                num_heads=4,
+                dropout=0.1,
+                time_pool="max",
+                gate_residual=True,
+                eps=1e-6,
+                use_gate=True,
+                use_latent=True,
+                post_pool_norm=False,
+                window_type=None,
+                fixed_fft_length=None,
+                remove_dc=remove_dc,
+                dc_only=dc_only,
+                mean_anchor_residual=True,
+                mean_anchor_beta_init=mean_anchor_beta_init,
+                mean_anchor_unbounded=True,
+            )
+
         elif pooling == "FLaG_AttnFreqGate":
             # Proposal 2: derive one scalar gate per frequency token from the
             # existing latent-attention weights, while retaining the original
@@ -1195,6 +1219,7 @@ def train(args):
             if (
                 name.endswith("mean_mix_alpha")
                 or name.endswith("mean_anchor_beta_raw")
+                or name.endswith("mean_anchor_beta_unbounded")
             ):
                 mean_mix_params.append(p)
             else:
@@ -1240,6 +1265,7 @@ def train(args):
             if (
                 name.endswith("mean_mix_alpha")
                 or name.endswith("mean_anchor_beta_raw")
+                or name.endswith("mean_anchor_beta_unbounded")
             ):
                 mean_mix_params.append(p)
             else:
@@ -1569,6 +1595,10 @@ def train(args):
                     model.pool.mean_anchor_beta_raw.detach()
                 ).cpu()
             )
+        elif hasattr(model.pool, "mean_anchor_beta_unbounded"):
+            row["mean_anchor_beta"] = float(
+                model.pool.mean_anchor_beta_unbounded.detach().cpu()
+            )
 
         history.append(
             row
@@ -1777,7 +1807,15 @@ def train(args):
                 )
             }
             if hasattr(model.pool, "mean_anchor_beta_raw")
-            else {}
+            else (
+                {
+                    "mean_anchor_beta": float(
+                        model.pool.mean_anchor_beta_unbounded.detach().cpu()
+                    )
+                }
+                if hasattr(model.pool, "mean_anchor_beta_unbounded")
+                else {}
+            )
         ),
         **(
             {
@@ -1886,6 +1924,7 @@ def main():
             "FLaG",
             "FLaG_MeanResidual",
             "FLaG_MeanAnchor",
+            "FLaG_MeanAnchorFree",
             "FLaG_AttnFreqGate",
             "FLaG_MeanResidualAttnFreq",
             "FLaG_LearnedFreqGate",
