@@ -174,6 +174,7 @@ class SentenceEncoder(nn.Module):
             "FLaG_MeanAnchor",
             "FLaG_MeanAnchorFree",
             "FLaG_AlignmentAnchor",
+            "FLaG_AlignmentAnchorStopGrad",
             "FLaG_AttnFreqGate",
             "FLaG_MeanResidualAttnFreq",
             "FLaG_LearnedFreqGate",
@@ -212,6 +213,7 @@ class SentenceEncoder(nn.Module):
                         "FLaG_MeanAnchor",
                         "FLaG_MeanAnchorFree",
                         "FLaG_AlignmentAnchor",
+                        "FLaG_AlignmentAnchorStopGrad",
                     }
                 ),
                 mean_anchor_beta_init=mean_anchor_beta_init,
@@ -219,7 +221,13 @@ class SentenceEncoder(nn.Module):
                     pooling == "FLaG_MeanAnchorFree"
                 ),
                 mean_alignment_anchor=(
-                    pooling == "FLaG_AlignmentAnchor"
+                    pooling in {
+                        "FLaG_AlignmentAnchor",
+                        "FLaG_AlignmentAnchorStopGrad",
+                    }
+                ),
+                mean_alignment_stopgrad=(
+                    pooling == "FLaG_AlignmentAnchorStopGrad"
                 ),
                 attention_frequency_gate=(
                     pooling in {
@@ -936,6 +944,7 @@ def main():
             "FLaG_MeanAnchor",
             "FLaG_MeanAnchorFree",
             "FLaG_AlignmentAnchor",
+            "FLaG_AlignmentAnchorStopGrad",
             "FLaG_AttnFreqGate",
             "FLaG_MeanResidualAttnFreq",
             "FLaG_LearnedFreqGate",
