@@ -45,6 +45,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
         mean_anchor_beta_init: float = 0.1,
         mean_anchor_unbounded: bool = False,
         mean_alignment_anchor: bool = False,
+        mean_alignment_stopgrad: bool = False,
         attention_frequency_gate: bool = False,
         learned_frequency_gate: bool = False,
         learned_frequency_hidden: int = 256,
@@ -84,6 +85,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
         self.mean_anchor_residual = bool(mean_anchor_residual)
         self.mean_anchor_unbounded = bool(mean_anchor_unbounded)
         self.mean_alignment_anchor = bool(mean_alignment_anchor)
+        self.mean_alignment_stopgrad = bool(mean_alignment_stopgrad)
         self.attention_frequency_gate = bool(attention_frequency_gate)
         self.learned_frequency_gate = bool(learned_frequency_gate)
         self.learned_frequency_hidden = int(learned_frequency_hidden)
@@ -123,6 +125,11 @@ class FFTLatentAttentionGatePooling(nn.Module):
         if self.mean_alignment_anchor and not self.mean_anchor_residual:
             raise ValueError(
                 "mean_alignment_anchor=True requires mean_anchor_residual=True."
+            )
+
+        if self.mean_alignment_stopgrad and not self.mean_alignment_anchor:
+            raise ValueError(
+                "mean_alignment_stopgrad=True requires mean_alignment_anchor=True."
             )
 
         if not (0.0 <= float(mean_mix_init) <= 1.0):
@@ -870,9 +877,15 @@ class FFTLatentAttentionGatePooling(nn.Module):
                     keepdim=True,
                 )
 
+                alignment_for_geometry = (
+                    alignment.detach()
+                    if self.mean_alignment_stopgrad
+                    else alignment
+                )
+
                 residual = (
                     flag_branch
-                    - alignment * mean_branch
+                    - alignment_for_geometry * mean_branch
                 )
 
                 if (
@@ -899,7 +912,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
                     # except for the degenerate exact a=-1 case, protected by
                     # a tiny positive floor.
                     mean_axis_scale = (
-                        1.0 + alignment
+                        1.0 + alignment_for_geometry
                     ).clamp_min(self.eps)
 
                     pooled_output = F.normalize(
