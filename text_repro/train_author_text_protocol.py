@@ -170,6 +170,7 @@ def build_pooling(
     pooling: str,
     d_model: int,
     mean_anchor_beta_init: float,
+    flag_time_pool: str = "max",
 ):
     if pooling == "mean":
         return MeanPooling()
@@ -180,15 +181,15 @@ def build_pooling(
     }:
         raise ValueError(f"Unsupported pooling: {pooling}")
 
-    # Exact text settings from Kewei2023/Pooling-img-text:
-    # 8 latents, 4 heads, global FFT, max time pooling,
-    # residual gate, FLaG dropout=0.0, post-pool LayerNorm enabled.
+    # Exact text settings from Kewei2023/Pooling-img-text except for the
+    # explicit time-pooling ablation. The default remains "max", so all
+    # previous author-protocol runs are unchanged.
     return FFTLatentAttentionGatePooling(
         d_model=d_model,
         num_latents=8,
         num_heads=4,
         dropout=0.0,
-        time_pool="max",
+        time_pool=flag_time_pool,
         gate_residual=True,
         eps=1e-6,
         use_gate=True,
@@ -218,6 +219,7 @@ class IMDBModel(nn.Module):
         model_path: str,
         pooling: str,
         mean_anchor_beta_init: float,
+        flag_time_pool: str = "max",
     ):
         super().__init__()
         self.encoder = AutoModel.from_pretrained(
@@ -229,6 +231,7 @@ class IMDBModel(nn.Module):
             pooling,
             d_model,
             mean_anchor_beta_init,
+            flag_time_pool=flag_time_pool,
         )
         self.classifier = nn.Linear(d_model, 2)
 
@@ -254,6 +257,7 @@ class SentencePairModel(nn.Module):
         pooling: str,
         freeze_backbone: bool,
         mean_anchor_beta_init: float,
+        flag_time_pool: str = "max",
     ):
         super().__init__()
         self.freeze_backbone = bool(freeze_backbone)
@@ -273,6 +277,7 @@ class SentencePairModel(nn.Module):
             pooling,
             d_model,
             mean_anchor_beta_init,
+            flag_time_pool=flag_time_pool,
         )
 
         self.log_scale = nn.Parameter(torch.tensor(0.0))
@@ -488,6 +493,7 @@ def run_imdb(args, device, tokenizer, run_dir):
         args.model_path,
         args.pooling,
         args.mean_anchor_beta_init,
+        flag_time_pool=args.flag_time_pool,
     ).to(device)
 
     optimizer = build_e2e_adam(
@@ -571,6 +577,7 @@ def run_imdb(args, device, tokenizer, run_dir):
         "scheduler": None,
         "pool_dropout": 0.0,
         "post_pool_norm": True,
+        "flag_time_pool": args.flag_time_pool,
         "split_seed": args.seed,
     }
 
@@ -615,6 +622,7 @@ def run_stsb(args, device, tokenizer, run_dir):
         args.pooling,
         freeze_backbone=False,
         mean_anchor_beta_init=args.mean_anchor_beta_init,
+        flag_time_pool=args.flag_time_pool,
     ).to(device)
 
     optimizer = build_e2e_adam(
@@ -703,6 +711,7 @@ def run_stsb(args, device, tokenizer, run_dir):
         "score_mode": "cosine_affine",
         "pool_dropout": 0.0,
         "post_pool_norm": True,
+        "flag_time_pool": args.flag_time_pool,
         "scale": float(
             torch.exp(model.log_scale).detach().cpu()
         ),
@@ -762,6 +771,7 @@ def run_sprint(args, device, tokenizer, run_dir):
         args.pooling,
         freeze_backbone=True,
         mean_anchor_beta_init=args.mean_anchor_beta_init,
+        flag_time_pool=args.flag_time_pool,
     ).to(device)
 
     trainable = [
@@ -861,6 +871,7 @@ def run_sprint(args, device, tokenizer, run_dir):
         "decision_threshold": 0.5,
         "pool_dropout": 0.0,
         "post_pool_norm": True,
+        "flag_time_pool": args.flag_time_pool,
         "split_seed": args.seed,
         "sprint_split_source": (
             "recombined local adaptation train+validation "
@@ -933,6 +944,16 @@ def main():
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
+        "--flag_time_pool",
+        choices=["max", "mean"],
+        default="max",
+        help=(
+            "Final time-domain pooling used by FLaG/Alignment after iFFT. "
+            "Default max reproduces the author text protocol; mean is the "
+            "matched mechanism ablation."
+        ),
+    )
+    parser.add_argument(
         "--mean_anchor_beta_init",
         type=float,
         default=0.1,
@@ -992,6 +1013,7 @@ def main():
     print("output:", run_dir)
     print("FLaG dropout: 0.0")
     print("FLaG post_pool_norm: True")
+    print("FLaG time_pool:", args.flag_time_pool)
     print("=" * 80)
 
     tokenizer = AutoTokenizer.from_pretrained(
