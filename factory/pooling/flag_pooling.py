@@ -308,9 +308,25 @@ class FFTLatentAttentionGatePooling(nn.Module):
         self.time_out_proj = nn.Linear(d_model, d_model)
 
         if self.identity_time_out_proj:
-            # FLaG-A1 / A1Z: start from an exact identity readout while
-            # keeping the projection trainable after initialization.
+            # FLaG-A1: exact identity readout.
+            #
+            # FLaG-A1Z needs one text-FLaG-specific compensation. The original
+            # residual gate is multiplier=1+sigmoid(logit), so zero gate logits
+            # give a uniform factor 1.5 rather than 1. To transplant the
+            # sister-repo idea "zero-init gate + Mean-equivalent readout"
+            # without changing the original gate functional family, initialize
+            # the trainable projection to (2/3)I for A1Z. Then:
+            #
+            #   (2/3) I @ (1.5 * Mean) = Mean
+            #
+            # exactly up to FFT float32 roundoff. A1 remains I.
+            proj_scale = (
+                2.0 / 3.0
+                if self.zero_init_gate_output
+                else 1.0
+            )
             nn.init.eye_(self.time_out_proj.weight)
+            self.time_out_proj.weight.data.mul_(proj_scale)
             nn.init.zeros_(self.time_out_proj.bias)
 
         self.dropout = nn.Dropout(dropout)
