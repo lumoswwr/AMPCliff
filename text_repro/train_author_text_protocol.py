@@ -184,9 +184,9 @@ def build_pooling(
     }:
         raise ValueError(f"Unsupported pooling: {pooling}")
 
-    # Exact text settings from Kewei2023/Pooling-img-text except for the
-    # explicit time-pooling ablation. The default remains "max", so all
-    # previous author-protocol runs are unchanged.
+    # Defaults reproduce Kewei2023/Pooling-img-text. The optional time-pool,
+    # post-norm and initialization controls are used only by matched mechanism
+    # ablations; existing author-protocol runs remain unchanged by default.
     return FFTLatentAttentionGatePooling(
         d_model=d_model,
         num_latents=8,
@@ -269,6 +269,7 @@ class SentencePairModel(nn.Module):
         freeze_backbone: bool,
         mean_anchor_beta_init: float,
         flag_time_pool: str = "max",
+        flag_post_pool_norm: bool = True,
     ):
         super().__init__()
         self.freeze_backbone = bool(freeze_backbone)
