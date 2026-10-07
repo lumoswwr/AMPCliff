@@ -34,7 +34,7 @@ echo "======================================================================"
 
 echo
 echo "[1/2] Verifying that A1Z is Mean-equivalent at initialization..."
-python -u text_repro/check_flag_a1z_identity.py
+python -u text_repro/check_flag_b2_identity.py
 
 run_one () {
   local task="$1"
@@ -80,7 +80,7 @@ for task in ${TASKS}; do
   run_one "${task}" "FLaG"
   run_one "${task}" "FLaG_A1"
   run_one "${task}" "FLaG_B1"
-  run_one "${task}" "FLaG_A1Z"
+  run_one "${task}" "FLaG_B2"
 done
 
 python -u text_repro/summarize_flag_init_ablation_seed0.py \
