@@ -171,12 +171,15 @@ def build_pooling(
     d_model: int,
     mean_anchor_beta_init: float,
     flag_time_pool: str = "max",
+    flag_post_pool_norm: bool = True,
 ):
     if pooling == "mean":
         return MeanPooling()
 
     if pooling not in {
         "FLaG",
+        "FLaG_A1",
+        "FLaG_A1Z",
         "FLaG_AlignmentAnchor",
     }:
         raise ValueError(f"Unsupported pooling: {pooling}")
@@ -194,7 +197,7 @@ def build_pooling(
         eps=1e-6,
         use_gate=True,
         use_latent=True,
-        post_pool_norm=True,
+        post_pool_norm=flag_post_pool_norm,
         window_type=None,
         fixed_fft_length=None,
         remove_dc=False,
@@ -205,6 +208,12 @@ def build_pooling(
         mean_anchor_beta_init=mean_anchor_beta_init,
         mean_alignment_anchor=(
             pooling == "FLaG_AlignmentAnchor"
+        ),
+        identity_time_out_proj=(
+            pooling in {"FLaG_A1", "FLaG_A1Z"}
+        ),
+        zero_init_gate_output=(
+            pooling == "FLaG_A1Z"
         ),
     )
 
@@ -220,6 +229,7 @@ class IMDBModel(nn.Module):
         pooling: str,
         mean_anchor_beta_init: float,
         flag_time_pool: str = "max",
+        flag_post_pool_norm: bool = True,
     ):
         super().__init__()
         self.encoder = AutoModel.from_pretrained(
@@ -232,6 +242,7 @@ class IMDBModel(nn.Module):
             d_model,
             mean_anchor_beta_init,
             flag_time_pool=flag_time_pool,
+            flag_post_pool_norm=flag_post_pool_norm,
         )
         self.classifier = nn.Linear(d_model, 2)
 
@@ -278,6 +289,7 @@ class SentencePairModel(nn.Module):
             d_model,
             mean_anchor_beta_init,
             flag_time_pool=flag_time_pool,
+            flag_post_pool_norm=flag_post_pool_norm,
         )
 
         self.log_scale = nn.Parameter(torch.tensor(0.0))
@@ -494,6 +506,9 @@ def run_imdb(args, device, tokenizer, run_dir):
         args.pooling,
         args.mean_anchor_beta_init,
         flag_time_pool=args.flag_time_pool,
+        flag_post_pool_norm=(
+            not args.disable_post_pool_norm
+        ),
     ).to(device)
 
     optimizer = build_e2e_adam(
@@ -576,7 +591,9 @@ def run_imdb(args, device, tokenizer, run_dir):
         "weight_decay": 0.0,
         "scheduler": None,
         "pool_dropout": 0.0,
-        "post_pool_norm": True,
+        "post_pool_norm": (
+            not args.disable_post_pool_norm
+        ),
         "flag_time_pool": args.flag_time_pool,
         "split_seed": args.seed,
     }
@@ -623,6 +640,9 @@ def run_stsb(args, device, tokenizer, run_dir):
         freeze_backbone=False,
         mean_anchor_beta_init=args.mean_anchor_beta_init,
         flag_time_pool=args.flag_time_pool,
+        flag_post_pool_norm=(
+            not args.disable_post_pool_norm
+        ),
     ).to(device)
 
     optimizer = build_e2e_adam(
@@ -710,7 +730,9 @@ def run_stsb(args, device, tokenizer, run_dir):
         "scheduler": None,
         "score_mode": "cosine_affine",
         "pool_dropout": 0.0,
-        "post_pool_norm": True,
+        "post_pool_norm": (
+            not args.disable_post_pool_norm
+        ),
         "flag_time_pool": args.flag_time_pool,
         "scale": float(
             torch.exp(model.log_scale).detach().cpu()
@@ -772,6 +794,9 @@ def run_sprint(args, device, tokenizer, run_dir):
         freeze_backbone=True,
         mean_anchor_beta_init=args.mean_anchor_beta_init,
         flag_time_pool=args.flag_time_pool,
+        flag_post_pool_norm=(
+            not args.disable_post_pool_norm
+        ),
     ).to(device)
 
     trainable = [
@@ -870,7 +895,9 @@ def run_sprint(args, device, tokenizer, run_dir):
         "score_mode": "cosine_logit",
         "decision_threshold": 0.5,
         "pool_dropout": 0.0,
-        "post_pool_norm": True,
+        "post_pool_norm": (
+            not args.disable_post_pool_norm
+        ),
         "flag_time_pool": args.flag_time_pool,
         "split_seed": args.seed,
         "sprint_split_source": (
@@ -938,6 +965,8 @@ def main():
         choices=[
             "mean",
             "FLaG",
+            "FLaG_A1",
+            "FLaG_A1Z",
             "FLaG_AlignmentAnchor",
         ],
         required=True,
@@ -951,6 +980,15 @@ def main():
             "Final time-domain pooling used by FLaG/Alignment after iFFT. "
             "Default max reproduces the author text protocol; mean is the "
             "matched mechanism ablation."
+        ),
+    )
+    parser.add_argument(
+        "--disable_post_pool_norm",
+        action="store_true",
+        help=(
+            "Disable the post-pooling LayerNorm. This is used by the "
+            "A1/A1Z initialization-control experiment so A1Z + mean "
+            "can be exactly Mean at initialization."
         ),
     )
     parser.add_argument(
@@ -993,6 +1031,8 @@ def main():
     method_dir = {
         "mean": "mean",
         "FLaG": "flag",
+        "FLaG_A1": "flag_a1",
+        "FLaG_A1Z": "flag_a1z",
         "FLaG_AlignmentAnchor": "alignment",
     }[args.pooling]
 
@@ -1012,7 +1052,10 @@ def main():
     print("device:", device)
     print("output:", run_dir)
     print("FLaG dropout: 0.0")
-    print("FLaG post_pool_norm: True")
+    print(
+        "FLaG post_pool_norm:",
+        not args.disable_post_pool_norm,
+    )
     print("FLaG time_pool:", args.flag_time_pool)
     print("=" * 80)
 
