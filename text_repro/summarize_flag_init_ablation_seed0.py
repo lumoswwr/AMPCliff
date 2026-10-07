@@ -34,7 +34,8 @@ def main():
     variants = [
         ("FLaG-Mean", "flag"),
         ("FLaG-A1", "flag_a1"),
-        ("FLaG-A1Z", "flag_a1z"),
+        ("FLaG-B1", "flag_b1"),
+        ("FLaG-zero/B2", "flag_zero"),
     ]
 
     for task in ["stsb", "sprint"]:
