@@ -22,9 +22,14 @@ echo "  post_pool_norm = false"
 echo "  dropout = 0"
 echo
 echo "Variants:"
-echo "  FLaG-Mean : original random gate + random output projection"
-echo "  FLaG-A1   : original random gate + identity-initialized output projection"
-echo "  FLaG-A1Z  : zero-initialized final gate layer + identity output projection"
+echo "  FLaG-Mean : residual_sigmoid + random gate + random output projection"
+echo "  FLaG-A1   : residual_sigmoid + random gate + identity output projection"
+echo "  FLaG-B1   : centered_sigmoid + random gate + identity output projection"
+echo "  FLaG-zero : centered_sigmoid + zero-init gate output + identity projection"
+echo
+echo "B1 is included because the sister repo's exact Mean-start control (B2)"
+echo "changes residual_sigmoid -> centered_sigmoid as well as zero-initializing"
+echo "the last gate layer. B1 isolates that parameterization change."
 echo "======================================================================"
 
 echo
@@ -39,7 +44,9 @@ run_one () {
   case "${pooling}" in
     FLaG) folder="flag" ;;
     FLaG_A1) folder="flag_a1" ;;
-    FLaG_A1Z) folder="flag_a1z" ;;
+    FLaG_B1) folder="flag_b1" ;;
+    FLaG_A1Z) folder="flag_zero" ;;
+    FLaG_B2) folder="flag_b2" ;;
     *)
       echo "Unknown pooling: ${pooling}" >&2
       exit 2
@@ -72,6 +79,7 @@ echo "[2/2] Training matched variants..."
 for task in ${TASKS}; do
   run_one "${task}" "FLaG"
   run_one "${task}" "FLaG_A1"
+  run_one "${task}" "FLaG_B1"
   run_one "${task}" "FLaG_A1Z"
 done
 
