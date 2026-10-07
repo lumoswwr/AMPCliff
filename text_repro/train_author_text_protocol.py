@@ -596,6 +596,12 @@ def run_imdb(args, device, tokenizer, run_dir):
             not args.disable_post_pool_norm
         ),
         "flag_time_pool": args.flag_time_pool,
+        "identity_time_out_proj": (
+            args.pooling in {"FLaG_A1", "FLaG_A1Z"}
+        ),
+        "zero_init_gate_output": (
+            args.pooling == "FLaG_A1Z"
+        ),
         "split_seed": args.seed,
     }
 
@@ -735,6 +741,12 @@ def run_stsb(args, device, tokenizer, run_dir):
             not args.disable_post_pool_norm
         ),
         "flag_time_pool": args.flag_time_pool,
+        "identity_time_out_proj": (
+            args.pooling in {"FLaG_A1", "FLaG_A1Z"}
+        ),
+        "zero_init_gate_output": (
+            args.pooling == "FLaG_A1Z"
+        ),
         "scale": float(
             torch.exp(model.log_scale).detach().cpu()
         ),
@@ -900,6 +912,12 @@ def run_sprint(args, device, tokenizer, run_dir):
             not args.disable_post_pool_norm
         ),
         "flag_time_pool": args.flag_time_pool,
+        "identity_time_out_proj": (
+            args.pooling in {"FLaG_A1", "FLaG_A1Z"}
+        ),
+        "zero_init_gate_output": (
+            args.pooling == "FLaG_A1Z"
+        ),
         "split_seed": args.seed,
         "sprint_split_source": (
             "recombined local adaptation train+validation "
