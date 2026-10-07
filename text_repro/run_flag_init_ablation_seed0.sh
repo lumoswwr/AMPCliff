@@ -24,7 +24,7 @@ echo
 echo "Variants:"
 echo "  FLaG-Mean : original random gate + random output projection"
 echo "  FLaG-A1   : original random gate + identity-initialized output projection"
-echo "  FLaG-A1Z  : zero-centered identity gate init + identity output projection"
+echo "  FLaG-A1Z  : zero-initialized final gate layer + identity output projection"
 echo "======================================================================"
 
 echo
