@@ -833,6 +833,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
             enhanced_freq,
             seq_len=T,
         )
+        self._last_time_tokens = time_tokens.detach()
 
         if self.time_pool == "mean":
             pooled = masked_mean_pooling(
@@ -848,6 +849,9 @@ class FFTLatentAttentionGatePooling(nn.Module):
             )
 
         pooled_pre_projection = pooled
+        self._last_pooled_pre_projection = (
+            pooled_pre_projection.detach()
+        )
 
         if self.post_pool_norm:
             pooled_for_projection = self.norm3(
@@ -858,11 +862,16 @@ class FFTLatentAttentionGatePooling(nn.Module):
                 pooled_pre_projection
             )
 
+        self._last_pooled_for_projection = (
+            pooled_for_projection.detach()
+        )
+
         pooled_output = self.time_out_proj(
             self.dropout(
                 pooled_for_projection
             )
         )
+        self._last_pooled_output = pooled_output.detach()
 
         if self.mean_residual or self.mean_anchor_residual:
             mean_output = masked_mean_pooling(
