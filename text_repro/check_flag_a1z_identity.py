@@ -39,6 +39,7 @@ def main():
         fixed_fft_length=None,
         remove_dc=False,
         dc_only=False,
+        gate_parameterization="centered_sigmoid",
         identity_time_out_proj=True,
         zero_init_gate_output=True,
     )
@@ -48,10 +49,10 @@ def main():
         expected = masked_mean_pooling(x, mask, eps=1e-6)
         actual = pool(x, attention_mask=mask)
 
-    # With the original FLaG residual gate, zero final gate logits give
-    # a uniform multiplier of 1.5. A1Z compensates this with a (2/3)I
-    # time_out_proj initialization, so the final readout should equal masked
-    # Mean directly, up to FFT float32 roundoff.
+    # Match AMPCliff-DualCliff/molecule-flag B2: centered_sigmoid +
+    # zero-init final gate layer gives an exact gate multiplier of 1, and the
+    # identity time_out_proj therefore makes the whole mean-pooling readout
+    # equal masked Mean at initialization, up to FFT float32 roundoff.
     diff = actual - expected
     max_abs = float(diff.abs().max())
 
@@ -59,7 +60,7 @@ def main():
     cos = cos.clamp(-1.0, 1.0)
     angle = torch.rad2deg(torch.acos(cos))
 
-    print("A1Z INITIAL-IDENTITY CHECK")
+    print("FLaG-ZERO / B2 INITIAL-IDENTITY CHECK")
     print(f"max_abs_error_vs_mean={max_abs:.10e}")
     print(f"min_cosine={float(cos.min()):.10f}")
     print(f"max_angle_deg={float(angle.max()):.10f}")
@@ -69,12 +70,12 @@ def main():
     # mismatch such as post-pool LayerNorm or a non-identity projection.
     if max_abs > 2e-5:
         raise SystemExit(
-            "FAIL: A1Z + mean + no-post-norm is not equal to Mean "
+            "FAIL: FLaG-zero/B2 + mean + no-post-norm is not equal to Mean "
             f"at initialization (max_abs_error={max_abs:.3e})."
         )
 
     print(
-        "PASS: A1Z starts from masked Mean up to FFT float32 roundoff."
+        "PASS: FLaG-zero/B2 starts from masked Mean up to FFT float32 roundoff."
     )
 
 
