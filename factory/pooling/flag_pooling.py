@@ -247,9 +247,9 @@ class FFTLatentAttentionGatePooling(nn.Module):
             if self.zero_init_gate_output:
                 # FLaG-zero / A1Z:
                 # zero-initialize the final gate-output layer. In the
-                # zero-init mode _apply_gate interprets this output as a
-                # zero-centered residual delta via tanh, so raw=0 gives an
-                # exact multiplicative identity of 1 at initialization.
+                # zero-init mode _apply_gate uses an identity-centered
+                # 2*sigmoid(logit) multiplier, so logit=0 gives an exact
+                # multiplicative identity of 1 at initialization.
                 nn.init.zeros_(self.freq_gate[-1].weight)
                 nn.init.zeros_(self.freq_gate[-1].bias)
 
@@ -549,18 +549,17 @@ class FFTLatentAttentionGatePooling(nn.Module):
         gate_logits = self.freq_gate(gate_input)
 
         if self.zero_init_gate_output:
-            # Identity-centered residual gate used only by FLaG-zero/A1Z:
+            # Identity-centered gate used only by FLaG-zero/A1Z:
             #
-            #   delta = tanh(logits)
-            #   multiplier = 1 + delta
+            #   multiplier = 2 * sigmoid(logits)
             #
-            # The zero-initialized final linear layer therefore gives
-            # multiplier == 1 exactly at initialization. This is deliberately
-            # isolated behind a flag so the original FLaG parameterization
-            # (1 + sigmoid(logits)) is unchanged for all existing experiments.
-            gate_delta = torch.tanh(gate_logits)
-            self._last_raw_gate = gate_delta.detach()
-            gate = 1.0 + gate_delta
+            # Zero logits therefore give multiplier == 1 exactly. The range
+            # remains bounded in (0, 2), allowing the branch to learn both
+            # suppression and enhancement after the identity start. This
+            # special parameterization is isolated behind the A1Z flag; the
+            # original FLaG path remains 1 + sigmoid(logits).
+            gate = 2.0 * torch.sigmoid(gate_logits)
+            self._last_raw_gate = gate.detach()
         else:
             gate = torch.sigmoid(gate_logits)
             self._last_raw_gate = gate.detach()
