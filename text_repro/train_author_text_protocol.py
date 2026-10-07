@@ -901,6 +901,20 @@ def run_stsb(args, device, tokenizer, run_dir):
     best_epoch = None
     best_path = run_dir / "best_model.pt"
     history = []
+    angle_audit = {}
+
+    if args.stage_angle_audit:
+        angle_audit["epoch0"] = collect_stage_angles(
+            model,
+            val_loader,
+            device,
+        )
+        print_stage_angle_snapshot(
+            "stsb",
+            args.pooling,
+            "epoch0",
+            angle_audit["epoch0"],
+        )
 
     for epoch in range(1, 4):
         model.train()
@@ -943,6 +957,19 @@ def run_stsb(args, device, tokenizer, run_dir):
             flush=True,
         )
 
+        if args.stage_angle_audit and epoch == 1:
+            angle_audit["epoch1"] = collect_stage_angles(
+                model,
+                val_loader,
+                device,
+            )
+            print_stage_angle_snapshot(
+                "stsb",
+                args.pooling,
+                "epoch1",
+                angle_audit["epoch1"],
+            )
+
         if val["spearman"] > best_score:
             best_score = val["spearman"]
             best_epoch = epoch
@@ -953,6 +980,24 @@ def run_stsb(args, device, tokenizer, run_dir):
     )
     val = eval_stsb(model, val_loader, device)
     test = eval_stsb(model, test_loader, device)
+
+    if args.stage_angle_audit:
+        angle_audit["best"] = collect_stage_angles(
+            model,
+            val_loader,
+            device,
+        )
+        angle_audit["best_epoch"] = int(best_epoch)
+        print_stage_angle_snapshot(
+            "stsb",
+            args.pooling,
+            f"best_e{best_epoch}",
+            angle_audit["best"],
+        )
+        save_stage_angle_audit(
+            run_dir,
+            angle_audit,
+        )
 
     result = {
         "task": "stsb",
@@ -1013,6 +1058,9 @@ def run_stsb(args, device, tokenizer, run_dir):
             torch.exp(model.log_scale).detach().cpu()
         ),
         "bias": float(model.bias.detach().cpu()),
+        "stage_angle_audit": bool(
+            args.stage_angle_audit
+        ),
     }
 
     return model, result, history
@@ -1089,6 +1137,20 @@ def run_sprint(args, device, tokenizer, run_dir):
     best_epoch = None
     best_path = run_dir / "best_model.pt"
     history = []
+    angle_audit = {}
+
+    if args.stage_angle_audit:
+        angle_audit["epoch0"] = collect_stage_angles(
+            model,
+            val_loader,
+            device,
+        )
+        print_stage_angle_snapshot(
+            "sprint",
+            args.pooling,
+            "epoch0",
+            angle_audit["epoch0"],
+        )
 
     for epoch in range(1, 11):
         model.train()
@@ -1133,6 +1195,19 @@ def run_sprint(args, device, tokenizer, run_dir):
             flush=True,
         )
 
+        if args.stage_angle_audit and epoch == 1:
+            angle_audit["epoch1"] = collect_stage_angles(
+                model,
+                val_loader,
+                device,
+            )
+            print_stage_angle_snapshot(
+                "sprint",
+                args.pooling,
+                "epoch1",
+                angle_audit["epoch1"],
+            )
+
         if val["accuracy"] > best_score:
             best_score = val["accuracy"]
             best_epoch = epoch
@@ -1143,6 +1218,24 @@ def run_sprint(args, device, tokenizer, run_dir):
     )
     val = eval_sprint(model, val_loader, device)
     test = eval_sprint(model, test_loader, device)
+
+    if args.stage_angle_audit:
+        angle_audit["best"] = collect_stage_angles(
+            model,
+            val_loader,
+            device,
+        )
+        angle_audit["best_epoch"] = int(best_epoch)
+        print_stage_angle_snapshot(
+            "sprint",
+            args.pooling,
+            f"best_e{best_epoch}",
+            angle_audit["best"],
+        )
+        save_stage_angle_audit(
+            run_dir,
+            angle_audit,
+        )
 
     result = {
         "task": "sprint",
@@ -1213,6 +1306,9 @@ def run_sprint(args, device, tokenizer, run_dir):
             torch.exp(model.log_scale).detach().cpu()
         ),
         "bias": float(model.bias.detach().cpu()),
+        "stage_angle_audit": bool(
+            args.stage_angle_audit
+        ),
     }
 
     return model, result, history
@@ -1296,6 +1392,14 @@ def main():
             "Disable the post-pooling LayerNorm. This is used by the "
             "A1/A1Z initialization-control experiment so A1Z + mean "
             "can be exactly Mean at initialization."
+        ),
+    )
+    parser.add_argument(
+        "--stage_angle_audit",
+        action="store_true",
+        help=(
+            "Record validation-set FLaG stage angles at epoch0, "
+            "after epoch1, and at the selected best checkpoint."
         ),
     )
     parser.add_argument(
