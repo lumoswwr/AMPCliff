@@ -35,7 +35,7 @@ def main():
         ("FLaG-Mean", "flag"),
         ("FLaG-A1", "flag_a1"),
         ("FLaG-B1", "flag_b1"),
-        ("FLaG-zero/B2", "flag_zero"),
+        ("FLaG-zero/B2", "flag_b2"),
     ]
 
     for task in ["stsb", "sprint"]:
