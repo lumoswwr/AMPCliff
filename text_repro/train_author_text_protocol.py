@@ -602,6 +602,15 @@ def run_imdb(args, device, tokenizer, run_dir):
         "zero_init_gate_output": (
             args.pooling == "FLaG_A1Z"
         ),
+        "time_out_proj_init_scale": (
+            (2.0 / 3.0)
+            if args.pooling == "FLaG_A1Z"
+            else (
+                1.0
+                if args.pooling == "FLaG_A1"
+                else None
+            )
+        ),
         "split_seed": args.seed,
     }
 
@@ -746,6 +755,15 @@ def run_stsb(args, device, tokenizer, run_dir):
         ),
         "zero_init_gate_output": (
             args.pooling == "FLaG_A1Z"
+        ),
+        "time_out_proj_init_scale": (
+            (2.0 / 3.0)
+            if args.pooling == "FLaG_A1Z"
+            else (
+                1.0
+                if args.pooling == "FLaG_A1"
+                else None
+            )
         ),
         "scale": float(
             torch.exp(model.log_scale).detach().cpu()
@@ -917,6 +935,15 @@ def run_sprint(args, device, tokenizer, run_dir):
         ),
         "zero_init_gate_output": (
             args.pooling == "FLaG_A1Z"
+        ),
+        "time_out_proj_init_scale": (
+            (2.0 / 3.0)
+            if args.pooling == "FLaG_A1Z"
+            else (
+                1.0
+                if args.pooling == "FLaG_A1"
+                else None
+            )
         ),
         "split_seed": args.seed,
         "sprint_split_source": (
