@@ -443,6 +443,208 @@ def eval_sprint(model, loader, device):
     }
 
 
+
+# =========================================================
+# Stage-wise FLaG angle audit
+# =========================================================
+
+def _masked_mean_tensor(features, attention_mask, eps=1e-6):
+    mask = attention_mask.unsqueeze(-1).to(features.dtype)
+    summed = (features * mask).sum(dim=1)
+    denom = mask.sum(dim=1).clamp(min=eps)
+    return summed / denom
+
+
+def _angle_deg(a, b):
+    cosine = F.cosine_similarity(
+        a,
+        b,
+        dim=-1,
+        eps=1e-8,
+    ).clamp(-1.0, 1.0)
+    return torch.rad2deg(torch.acos(cosine))
+
+
+def _stage_angle_batch(pool, hidden, attention_mask):
+    required = [
+        "_last_freq_tokens",
+        "_last_enhanced_freq",
+        "_last_time_tokens",
+        "_last_pooled_pre_projection",
+        "_last_pooled_for_projection",
+        "_last_pooled_output",
+    ]
+    missing = [
+        name for name in required
+        if not hasattr(pool, name)
+    ]
+    if missing:
+        raise RuntimeError(
+            "Stage-angle audit requires FLaG stage tensors; "
+            f"missing {missing}"
+        )
+
+    d_model = hidden.size(-1)
+    mean_input = _masked_mean_tensor(
+        hidden,
+        attention_mask,
+    )
+
+    freq = pool._last_freq_tokens
+    enhanced = pool._last_enhanced_freq
+
+    # k=0 real coefficient is the spectral DC vector. The imaginary DC
+    # coefficient is zero for real-valued input and remains zero under the
+    # channel-wise gate, so comparing the real D-dimensional vectors is enough.
+    dc_before = freq[:, 0, :d_model]
+    dc_after = enhanced[:, 0, :d_model]
+
+    time_mean = _masked_mean_tensor(
+        pool._last_time_tokens,
+        attention_mask,
+    )
+    pooled_pre = pool._last_pooled_pre_projection
+    pooled_postnorm = pool._last_pooled_for_projection
+    pooled_final = pool._last_pooled_output
+
+    return {
+        # Sanity check for the theoretical Mean <-> DC relation.
+        "mean_to_dc_deg": _angle_deg(
+            mean_input,
+            dc_before,
+        ),
+        # Whole-spectrum change induced by the gate.
+        "spectral_gate_deg": _angle_deg(
+            freq.reshape(freq.size(0), -1),
+            enhanced.reshape(enhanced.size(0), -1),
+        ),
+        # The key channel-warping diagnostic on DC itself.
+        "dc_gate_deg": _angle_deg(
+            dc_before,
+            dc_after,
+        ),
+        # Cumulative deviation from raw masked Mean after iFFT + time mean.
+        "mean_to_time_mean_deg": _angle_deg(
+            mean_input,
+            time_mean,
+        ),
+        # Local change introduced by post-pool normalization.
+        "time_mean_to_postnorm_deg": _angle_deg(
+            pooled_pre,
+            pooled_postnorm,
+        ),
+        # Local change introduced by the trainable output projection.
+        "postnorm_to_projection_deg": _angle_deg(
+            pooled_postnorm,
+            pooled_final,
+        ),
+        # Final cumulative FLaG angle relative to raw Mean.
+        "mean_to_final_deg": _angle_deg(
+            mean_input,
+            pooled_final,
+        ),
+    }
+
+
+@torch.no_grad()
+def collect_stage_angles(model, loader, device):
+    if not isinstance(
+        model.pool,
+        FFTLatentAttentionGatePooling,
+    ):
+        raise ValueError(
+            "stage_angle_audit is only defined for FLaG variants"
+        )
+
+    model.eval()
+    sums = {}
+    sums_sq = {}
+    count = 0
+
+    for tok1, tok2, _labels in loader:
+        for tokens in (tok1, tok2):
+            tokens = {
+                k: v.to(device)
+                for k, v in tokens.items()
+            }
+
+            hidden = model.encoder(
+                **tokens
+            ).last_hidden_state
+
+            # Populate stage tensors on the pooling module.
+            _ = model.pool(
+                hidden,
+                attention_mask=tokens["attention_mask"],
+            )
+
+            batch_metrics = _stage_angle_batch(
+                model.pool,
+                hidden,
+                tokens["attention_mask"],
+            )
+
+            batch_n = hidden.size(0)
+            count += batch_n
+
+            for key, values in batch_metrics.items():
+                values = values.detach().float()
+                sums[key] = (
+                    sums.get(key, 0.0)
+                    + float(values.sum().cpu())
+                )
+                sums_sq[key] = (
+                    sums_sq.get(key, 0.0)
+                    + float((values * values).sum().cpu())
+                )
+
+    out = {
+        "n_sentences": int(count),
+    }
+
+    for key in sorted(sums):
+        mean = sums[key] / max(count, 1)
+        if count > 1:
+            var = (
+                sums_sq[key]
+                - (sums[key] * sums[key]) / count
+            ) / (count - 1)
+            var = max(var, 0.0)
+            std = var ** 0.5
+        else:
+            std = 0.0
+
+        out[key] = {
+            "mean": float(mean),
+            "std": float(std),
+        }
+
+    return out
+
+
+def print_stage_angle_snapshot(task, pooling, label, snapshot):
+    def m(key):
+        return snapshot[key]["mean"]
+
+    print(
+        f"[ANGLE][{task.upper()}][{pooling}][{label}] "
+        f"n={snapshot['n_sentences']} "
+        f"mean->DC={m('mean_to_dc_deg'):.3f}deg "
+        f"spec_gate={m('spectral_gate_deg'):.3f}deg "
+        f"DC_gate={m('dc_gate_deg'):.3f}deg "
+        f"mean->timeMean={m('mean_to_time_mean_deg'):.3f}deg "
+        f"timeMean->postNorm={m('time_mean_to_postnorm_deg'):.3f}deg "
+        f"postNorm->proj={m('postnorm_to_projection_deg'):.3f}deg "
+        f"mean->final={m('mean_to_final_deg'):.3f}deg",
+        flush=True,
+    )
+
+
+def save_stage_angle_audit(run_dir, audit):
+    with (run_dir / "stage_angles.json").open("w") as f:
+        json.dump(audit, f, indent=2)
+
+
 # =========================================================
 # Optimizer
 # =========================================================
