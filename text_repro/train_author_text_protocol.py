@@ -179,7 +179,9 @@ def build_pooling(
     if pooling not in {
         "FLaG",
         "FLaG_A1",
+        "FLaG_B1",
         "FLaG_A1Z",
+        "FLaG_B2",
         "FLaG_AlignmentAnchor",
     }:
         raise ValueError(f"Unsupported pooling: {pooling}")
@@ -209,11 +211,21 @@ def build_pooling(
         mean_alignment_anchor=(
             pooling == "FLaG_AlignmentAnchor"
         ),
+        gate_parameterization=(
+            "centered_sigmoid"
+            if pooling in {"FLaG_B1", "FLaG_A1Z", "FLaG_B2"}
+            else "residual_sigmoid"
+        ),
         identity_time_out_proj=(
-            pooling in {"FLaG_A1", "FLaG_A1Z"}
+            pooling in {
+                "FLaG_A1",
+                "FLaG_B1",
+                "FLaG_A1Z",
+                "FLaG_B2",
+            }
         ),
         zero_init_gate_output=(
-            pooling == "FLaG_A1Z"
+            pooling in {"FLaG_A1Z", "FLaG_B2"}
         ),
     )
 
@@ -596,20 +608,35 @@ def run_imdb(args, device, tokenizer, run_dir):
             not args.disable_post_pool_norm
         ),
         "flag_time_pool": args.flag_time_pool,
+        "gate_parameterization": (
+            "centered_sigmoid"
+            if args.pooling in {
+                "FLaG_B1",
+                "FLaG_A1Z",
+                "FLaG_B2",
+            }
+            else "residual_sigmoid"
+        ),
         "identity_time_out_proj": (
-            args.pooling in {"FLaG_A1", "FLaG_A1Z"}
+            args.pooling in {
+                "FLaG_A1",
+                "FLaG_B1",
+                "FLaG_A1Z",
+                "FLaG_B2",
+            }
         ),
         "zero_init_gate_output": (
-            args.pooling == "FLaG_A1Z"
+            args.pooling in {"FLaG_A1Z", "FLaG_B2"}
         ),
         "time_out_proj_init_scale": (
-            (2.0 / 3.0)
-            if args.pooling == "FLaG_A1Z"
-            else (
-                1.0
-                if args.pooling == "FLaG_A1"
-                else None
-            )
+            1.0
+            if args.pooling in {
+                "FLaG_A1",
+                "FLaG_B1",
+                "FLaG_A1Z",
+                "FLaG_B2",
+            }
+            else None
         ),
         "split_seed": args.seed,
     }
@@ -750,20 +777,35 @@ def run_stsb(args, device, tokenizer, run_dir):
             not args.disable_post_pool_norm
         ),
         "flag_time_pool": args.flag_time_pool,
+        "gate_parameterization": (
+            "centered_sigmoid"
+            if args.pooling in {
+                "FLaG_B1",
+                "FLaG_A1Z",
+                "FLaG_B2",
+            }
+            else "residual_sigmoid"
+        ),
         "identity_time_out_proj": (
-            args.pooling in {"FLaG_A1", "FLaG_A1Z"}
+            args.pooling in {
+                "FLaG_A1",
+                "FLaG_B1",
+                "FLaG_A1Z",
+                "FLaG_B2",
+            }
         ),
         "zero_init_gate_output": (
-            args.pooling == "FLaG_A1Z"
+            args.pooling in {"FLaG_A1Z", "FLaG_B2"}
         ),
         "time_out_proj_init_scale": (
-            (2.0 / 3.0)
-            if args.pooling == "FLaG_A1Z"
-            else (
-                1.0
-                if args.pooling == "FLaG_A1"
-                else None
-            )
+            1.0
+            if args.pooling in {
+                "FLaG_A1",
+                "FLaG_B1",
+                "FLaG_A1Z",
+                "FLaG_B2",
+            }
+            else None
         ),
         "scale": float(
             torch.exp(model.log_scale).detach().cpu()
@@ -930,20 +972,35 @@ def run_sprint(args, device, tokenizer, run_dir):
             not args.disable_post_pool_norm
         ),
         "flag_time_pool": args.flag_time_pool,
+        "gate_parameterization": (
+            "centered_sigmoid"
+            if args.pooling in {
+                "FLaG_B1",
+                "FLaG_A1Z",
+                "FLaG_B2",
+            }
+            else "residual_sigmoid"
+        ),
         "identity_time_out_proj": (
-            args.pooling in {"FLaG_A1", "FLaG_A1Z"}
+            args.pooling in {
+                "FLaG_A1",
+                "FLaG_B1",
+                "FLaG_A1Z",
+                "FLaG_B2",
+            }
         ),
         "zero_init_gate_output": (
-            args.pooling == "FLaG_A1Z"
+            args.pooling in {"FLaG_A1Z", "FLaG_B2"}
         ),
         "time_out_proj_init_scale": (
-            (2.0 / 3.0)
-            if args.pooling == "FLaG_A1Z"
-            else (
-                1.0
-                if args.pooling == "FLaG_A1"
-                else None
-            )
+            1.0
+            if args.pooling in {
+                "FLaG_A1",
+                "FLaG_B1",
+                "FLaG_A1Z",
+                "FLaG_B2",
+            }
+            else None
         ),
         "split_seed": args.seed,
         "sprint_split_source": (
@@ -1012,7 +1069,9 @@ def main():
             "mean",
             "FLaG",
             "FLaG_A1",
+            "FLaG_B1",
             "FLaG_A1Z",
+            "FLaG_B2",
             "FLaG_AlignmentAnchor",
         ],
         required=True,
@@ -1078,7 +1137,9 @@ def main():
         "mean": "mean",
         "FLaG": "flag",
         "FLaG_A1": "flag_a1",
-        "FLaG_A1Z": "flag_a1z",
+        "FLaG_B1": "flag_b1",
+        "FLaG_A1Z": "flag_zero",
+        "FLaG_B2": "flag_b2",
         "FLaG_AlignmentAnchor": "alignment",
     }[args.pooling]
 
