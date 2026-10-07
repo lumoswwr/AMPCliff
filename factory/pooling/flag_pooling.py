@@ -49,6 +49,7 @@ class FFTLatentAttentionGatePooling(nn.Module):
         attention_frequency_gate: bool = False,
         learned_frequency_gate: bool = False,
         learned_frequency_hidden: int = 256,
+        gate_parameterization: str = "residual_sigmoid",
         identity_time_out_proj: bool = False,
         zero_init_gate_output: bool = False,
     ):
@@ -91,6 +92,23 @@ class FFTLatentAttentionGatePooling(nn.Module):
         self.attention_frequency_gate = bool(attention_frequency_gate)
         self.learned_frequency_gate = bool(learned_frequency_gate)
         self.learned_frequency_hidden = int(learned_frequency_hidden)
+
+        gate_parameterization = str(gate_parameterization).lower()
+        if gate_parameterization not in {
+            "residual_sigmoid",
+            "centered_sigmoid",
+        }:
+            raise ValueError(
+                "gate_parameterization must be 'residual_sigmoid' or "
+                f"'centered_sigmoid', got {gate_parameterization!r}"
+            )
+        if gate_parameterization == "centered_sigmoid" and not gate_residual:
+            raise ValueError(
+                "gate_parameterization='centered_sigmoid' requires "
+                "gate_residual=True."
+            )
+
+        self.gate_parameterization = gate_parameterization
         self.identity_time_out_proj = bool(identity_time_out_proj)
         self.zero_init_gate_output = bool(zero_init_gate_output)
 
@@ -245,18 +263,10 @@ class FFTLatentAttentionGatePooling(nn.Module):
             )
 
             if self.zero_init_gate_output:
-                # FLaG-zero / A1Z:
-                # Zero-initialize the final gate-output layer while keeping
-                # the original FLaG gate parameterization unchanged.
-                #
-                # Original residual FLaG uses multiplier=1+sigmoid(logit),
-                # so logit=0 gives the same scalar multiplier 1.5 in every
-                # channel. With mean time pooling, no post-pool LayerNorm and
-                # the pre-projection output is therefore exactly parallel to
-                # masked Mean (1.5 * Mean, up to FFT roundoff). For A1Z the
-                # output projection is initialized to (2/3)I, compensating
-                # this scalar so the final readout equals masked Mean at the
-                # training start without changing the original gate family.
+                # Zero-init the final gate-output layer. With the sister
+                # implementation's centered_sigmoid parameterization,
+                # raw_gate=sigmoid(0)=0.5 and gate_delta=2*0.5-1=0, so the
+                # residual multiplier starts at exactly 1.
                 nn.init.zeros_(self.freq_gate[-1].weight)
                 nn.init.zeros_(self.freq_gate[-1].bias)
 
@@ -308,25 +318,9 @@ class FFTLatentAttentionGatePooling(nn.Module):
         self.time_out_proj = nn.Linear(d_model, d_model)
 
         if self.identity_time_out_proj:
-            # FLaG-A1: exact identity readout.
-            #
-            # FLaG-A1Z needs one text-FLaG-specific compensation. The original
-            # residual gate is multiplier=1+sigmoid(logit), so zero gate logits
-            # give a uniform factor 1.5 rather than 1. To transplant the
-            # sister-repo idea "zero-init gate + Mean-equivalent readout"
-            # without changing the original gate functional family, initialize
-            # the trainable projection to (2/3)I for A1Z. Then:
-            #
-            #   (2/3) I @ (1.5 * Mean) = Mean
-            #
-            # exactly up to FFT float32 roundoff. A1 remains I.
-            proj_scale = (
-                2.0 / 3.0
-                if self.zero_init_gate_output
-                else 1.0
-            )
+            # Match the sister implementation: A1/B1/B2 all initialize the
+            # time-domain output projection to an exact identity map.
             nn.init.eye_(self.time_out_proj.weight)
-            self.time_out_proj.weight.data.mul_(proj_scale)
             nn.init.zeros_(self.time_out_proj.bias)
 
         self.dropout = nn.Dropout(dropout)
@@ -571,15 +565,21 @@ class FFTLatentAttentionGatePooling(nn.Module):
 
         gate_logits = self.freq_gate(gate_input)
 
-        # Keep the original FLaG gate parameterization for every variant.
-        # zero_init_gate_output changes initialization only, not the forward
-        # family: with zero final gate logits, sigmoid(0)=0.5 and the residual
-        # multiplier starts uniformly at 1.5 across channels.
-        gate = torch.sigmoid(gate_logits)
-        self._last_raw_gate = gate.detach()
+        raw_gate = torch.sigmoid(gate_logits)
+        self._last_raw_gate = raw_gate.detach()
+
+        # Match AMPCliff-DualCliff/molecule-flag:
+        # residual_sigmoid: 1 + sigmoid(z)
+        # centered_sigmoid: 1 + (2*sigmoid(z) - 1) = 2*sigmoid(z)
+        if self.gate_parameterization == "centered_sigmoid":
+            gate_delta = 2.0 * raw_gate - 1.0
+        else:
+            gate_delta = raw_gate
 
         if self.gate_residual:
-            gate = 1.0 + gate
+            gate = 1.0 + gate_delta
+        else:
+            gate = raw_gate
 
         enhanced_freq = (
             freq_tokens * gate.unsqueeze(1)
