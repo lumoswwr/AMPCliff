@@ -49,6 +49,8 @@ class FFTLatentAttentionGatePooling(nn.Module):
         attention_frequency_gate: bool = False,
         learned_frequency_gate: bool = False,
         learned_frequency_hidden: int = 256,
+        identity_time_out_proj: bool = False,
+        zero_init_gate_output: bool = False,
     ):
         super().__init__()
 
@@ -89,6 +91,18 @@ class FFTLatentAttentionGatePooling(nn.Module):
         self.attention_frequency_gate = bool(attention_frequency_gate)
         self.learned_frequency_gate = bool(learned_frequency_gate)
         self.learned_frequency_hidden = int(learned_frequency_hidden)
+        self.identity_time_out_proj = bool(identity_time_out_proj)
+        self.zero_init_gate_output = bool(zero_init_gate_output)
+
+        if self.zero_init_gate_output and not self.use_gate:
+            raise ValueError(
+                "zero_init_gate_output=True requires use_gate=True."
+            )
+
+        if self.zero_init_gate_output and not self.gate_residual:
+            raise ValueError(
+                "zero_init_gate_output=True requires gate_residual=True."
+            )
 
         if self.attention_frequency_gate and not self.use_latent:
             raise ValueError(
@@ -230,6 +244,15 @@ class FFTLatentAttentionGatePooling(nn.Module):
                 nn.Linear(freq_dim, freq_dim),
             )
 
+            if self.zero_init_gate_output:
+                # FLaG-zero / A1Z:
+                # zero-initialize the final gate-output layer. In the
+                # zero-init mode _apply_gate interprets this output as a
+                # zero-centered residual delta via tanh, so raw=0 gives an
+                # exact multiplicative identity of 1 at initialization.
+                nn.init.zeros_(self.freq_gate[-1].weight)
+                nn.init.zeros_(self.freq_gate[-1].bias)
+
         if self.learned_frequency_gate:
             # Proposal 2B: a frequency-specific scorer that does not reuse
             # latent-attention probabilities as the gate itself.
@@ -276,6 +299,13 @@ class FFTLatentAttentionGatePooling(nn.Module):
             )
 
         self.time_out_proj = nn.Linear(d_model, d_model)
+
+        if self.identity_time_out_proj:
+            # FLaG-A1 / A1Z: start from an exact identity readout while
+            # keeping the projection trainable after initialization.
+            nn.init.eye_(self.time_out_proj.weight)
+            nn.init.zeros_(self.time_out_proj.bias)
+
         self.dropout = nn.Dropout(dropout)
         self.norm3 = nn.LayerNorm(d_model)
 
@@ -516,14 +546,27 @@ class FFTLatentAttentionGatePooling(nn.Module):
         else:
             gate_input = freq_tokens.mean(dim=1)
 
-        gate = torch.sigmoid(
-            self.freq_gate(gate_input)
-        )
+        gate_logits = self.freq_gate(gate_input)
 
-        self._last_raw_gate = gate.detach()
+        if self.zero_init_gate_output:
+            # Identity-centered residual gate used only by FLaG-zero/A1Z:
+            #
+            #   delta = tanh(logits)
+            #   multiplier = 1 + delta
+            #
+            # The zero-initialized final linear layer therefore gives
+            # multiplier == 1 exactly at initialization. This is deliberately
+            # isolated behind a flag so the original FLaG parameterization
+            # (1 + sigmoid(logits)) is unchanged for all existing experiments.
+            gate_delta = torch.tanh(gate_logits)
+            self._last_raw_gate = gate_delta.detach()
+            gate = 1.0 + gate_delta
+        else:
+            gate = torch.sigmoid(gate_logits)
+            self._last_raw_gate = gate.detach()
 
-        if self.gate_residual:
-            gate = 1.0 + gate
+            if self.gate_residual:
+                gate = 1.0 + gate
 
         enhanced_freq = (
             freq_tokens * gate.unsqueeze(1)
