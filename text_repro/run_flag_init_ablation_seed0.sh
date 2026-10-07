@@ -33,7 +33,7 @@ echo "the last gate layer. B1 isolates that parameterization change."
 echo "======================================================================"
 
 echo
-echo "[1/2] Verifying that A1Z is Mean-equivalent at initialization..."
+echo "[1/2] Verifying that FLaG-zero/B2 is Mean-equivalent at initialization..."
 python -u text_repro/check_flag_b2_identity.py
 
 run_one () {
