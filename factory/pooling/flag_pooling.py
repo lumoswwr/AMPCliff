@@ -252,11 +252,11 @@ class FFTLatentAttentionGatePooling(nn.Module):
                 # Original residual FLaG uses multiplier=1+sigmoid(logit),
                 # so logit=0 gives the same scalar multiplier 1.5 in every
                 # channel. With mean time pooling, no post-pool LayerNorm and
-                # identity output projection, the initial output is therefore
-                # exactly parallel to masked Mean (1.5 * Mean, up to FFT
-                # roundoff). The sentence-pair protocol L2-normalizes pooled
-                # embeddings, making the initial representation exactly
-                # Mean-equivalent for cosine scoring.
+                # the pre-projection output is therefore exactly parallel to
+                # masked Mean (1.5 * Mean, up to FFT roundoff). For A1Z the
+                # output projection is initialized to (2/3)I, compensating
+                # this scalar so the final readout equals masked Mean at the
+                # training start without changing the original gate family.
                 nn.init.zeros_(self.freq_gate[-1].weight)
                 nn.init.zeros_(self.freq_gate[-1].bias)
 
