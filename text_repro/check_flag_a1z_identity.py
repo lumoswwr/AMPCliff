@@ -48,7 +48,13 @@ def main():
         expected = masked_mean_pooling(x, mask, eps=1e-6)
         actual = pool(x, attention_mask=mask)
 
-    diff = actual - expected
+    # With the original FLaG residual gate, zero final gate logits give
+    # sigmoid(0)=0.5 and therefore a uniform multiplier of 1.5. The raw
+    # output should thus be 1.5 * masked Mean, while its direction is exactly
+    # Mean. Sentence-pair scoring L2-normalizes this vector, so the downstream
+    # representation is Mean-equivalent at initialization.
+    expected_scaled = 1.5 * expected
+    diff = actual - expected_scaled
     max_abs = float(diff.abs().max())
 
     cos = F.cosine_similarity(actual, expected, dim=-1)
@@ -56,7 +62,7 @@ def main():
     angle = torch.rad2deg(torch.acos(cos))
 
     print("A1Z INITIAL-IDENTITY CHECK")
-    print(f"max_abs_error={max_abs:.10e}")
+    print(f"max_abs_error_vs_1.5x_mean={max_abs:.10e}")
     print(f"min_cosine={float(cos.min()):.10f}")
     print(f"max_angle_deg={float(angle.max()):.10f}")
 
@@ -65,11 +71,14 @@ def main():
     # mismatch such as post-pool LayerNorm or a non-identity projection.
     if max_abs > 2e-5:
         raise SystemExit(
-            "FAIL: A1Z + mean + no-post-norm is not Mean-equivalent "
-            f"at initialization (max_abs_error={max_abs:.3e})."
+            "FAIL: A1Z + mean + no-post-norm is not parallel to Mean "
+            f"with the expected 1.5 scale (max_abs_error={max_abs:.3e})."
         )
 
-    print("PASS: A1Z starts from masked Mean up to FFT float32 roundoff.")
+    print(
+        "PASS: A1Z starts at 1.5 * masked Mean (same direction); "
+        "after sentence-pair L2 normalization it is Mean-equivalent."
+    )
 
 
 if __name__ == "__main__":
