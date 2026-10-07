@@ -246,10 +246,17 @@ class FFTLatentAttentionGatePooling(nn.Module):
 
             if self.zero_init_gate_output:
                 # FLaG-zero / A1Z:
-                # zero-initialize the final gate-output layer. In the
-                # zero-init mode _apply_gate uses an identity-centered
-                # 2*sigmoid(logit) multiplier, so logit=0 gives an exact
-                # multiplicative identity of 1 at initialization.
+                # Zero-initialize the final gate-output layer while keeping
+                # the original FLaG gate parameterization unchanged.
+                #
+                # Original residual FLaG uses multiplier=1+sigmoid(logit),
+                # so logit=0 gives the same scalar multiplier 1.5 in every
+                # channel. With mean time pooling, no post-pool LayerNorm and
+                # identity output projection, the initial output is therefore
+                # exactly parallel to masked Mean (1.5 * Mean, up to FFT
+                # roundoff). The sentence-pair protocol L2-normalizes pooled
+                # embeddings, making the initial representation exactly
+                # Mean-equivalent for cosine scoring.
                 nn.init.zeros_(self.freq_gate[-1].weight)
                 nn.init.zeros_(self.freq_gate[-1].bias)
 
@@ -548,24 +555,15 @@ class FFTLatentAttentionGatePooling(nn.Module):
 
         gate_logits = self.freq_gate(gate_input)
 
-        if self.zero_init_gate_output:
-            # Identity-centered gate used only by FLaG-zero/A1Z:
-            #
-            #   multiplier = 2 * sigmoid(logits)
-            #
-            # Zero logits therefore give multiplier == 1 exactly. The range
-            # remains bounded in (0, 2), allowing the branch to learn both
-            # suppression and enhancement after the identity start. This
-            # special parameterization is isolated behind the A1Z flag; the
-            # original FLaG path remains 1 + sigmoid(logits).
-            gate = 2.0 * torch.sigmoid(gate_logits)
-            self._last_raw_gate = gate.detach()
-        else:
-            gate = torch.sigmoid(gate_logits)
-            self._last_raw_gate = gate.detach()
+        # Keep the original FLaG gate parameterization for every variant.
+        # zero_init_gate_output changes initialization only, not the forward
+        # family: with zero final gate logits, sigmoid(0)=0.5 and the residual
+        # multiplier starts uniformly at 1.5 across channels.
+        gate = torch.sigmoid(gate_logits)
+        self._last_raw_gate = gate.detach()
 
-            if self.gate_residual:
-                gate = 1.0 + gate
+        if self.gate_residual:
+            gate = 1.0 + gate
 
         enhanced_freq = (
             freq_tokens * gate.unsqueeze(1)
