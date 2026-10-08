@@ -13,7 +13,7 @@ EVAL_PAIRS="${EVAL_PAIRS:-0}"
 BATCH_SIZE="${BATCH_SIZE:-32}"
 
 echo "[deep] Running standalone math tests before checkpoint evaluation"
-python -m pytest -q tests/test_flag_deep_math.py
+python tests/test_flag_deep_math.py
 python -m py_compile text_repro/probe_flag_deep_mechanism.py \
   text_repro/summarize_flag_deep_mechanism.py
 echo "[deep] No training; uses existing best_model.pt"
