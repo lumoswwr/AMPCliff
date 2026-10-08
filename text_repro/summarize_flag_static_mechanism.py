@@ -42,7 +42,8 @@ def main():
             individual=[]
             for seed in seeds:
                 if mode is None:
-                    m=(read(args.reference,task,folder,seed)
+                    m=(read(args.root,task,folder,seed)
+                       or read(args.reference,task,folder,seed)
                        or read(args.reference_fallback,task,folder,seed))
                 else:
                     m=read(args.root,task,folder,seed)
