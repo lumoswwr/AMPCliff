@@ -11,6 +11,9 @@ SPLIT="${SPLIT:-validation}"
 MAX_PAIRS="${MAX_PAIRS:-0}"
 BATCH_SIZE="${BATCH_SIZE:-32}"
 
+echo "[probe] Syntax-checking probe and summarizer"
+python -m py_compile text_repro/probe_flag_gate_counterfactual.py text_repro/summarize_flag_gate_counterfactual.py
+
 echo "[probe] Existing best_model.pt, no training"
 echo "[probe] TASKS=${TASKS} METHODS=${METHODS} SPLIT=${SPLIT} MAX_PAIRS=${MAX_PAIRS}"
 
