@@ -103,3 +103,12 @@ def test_original_residual_gate_max_angle():
     # cos(theta) >= 2*sqrt(1*2)/(1+2)
     expected_max = math.degrees(math.acos(2*math.sqrt(2)/3))
     assert abs(expected_max - 19.47122063449) < 1e-8
+
+if __name__ == "__main__":
+    test_closed_form_matches_fft_even_odd_and_padding()
+    test_equal_real_imag_is_exact_channel_rescaling()
+    test_unpadded_mean_depends_only_on_real_gate()
+    test_long_right_pad_reversed_mean_is_first_token_over_length()
+    test_dc_weighted_angle_exact()
+    test_original_residual_gate_max_angle()
+    print("PASS: 6 FLaG math identities / checks")
