@@ -1227,8 +1227,13 @@ def run_sprint(args, device, tokenizer, run_dir):
                 angle_audit["epoch1"],
             )
 
-        if val["accuracy"] > best_score:
-            best_score = val["accuracy"]
+        checkpoint_key = (
+            "average_precision"
+            if args.sprint_selection_metric == "ap"
+            else "accuracy"
+        )
+        if val[checkpoint_key] > best_score:
+            best_score = val[checkpoint_key]
             best_epoch = epoch
             torch.save(model.state_dict(), best_path)
 
@@ -1271,6 +1276,11 @@ def run_sprint(args, device, tokenizer, run_dir):
         "test_precision": test["precision"],
         "test_recall": test["recall"],
         "epochs": 10,
+        "checkpoint_selection_metric": (
+            "val_average_precision"
+            if args.sprint_selection_metric == "ap"
+            else "val_accuracy"
+        ),
         "max_length": 128,
         "train_batch_size": 32,
         "eval_batch_size": 64,
@@ -1414,6 +1424,15 @@ def main():
             "Disable the post-pooling LayerNorm. This is used by the "
             "A1/A1Z initialization-control experiment so A1Z + mean "
             "can be exactly Mean at initialization."
+        ),
+    )
+    parser.add_argument(
+        "--sprint_selection_metric",
+        choices=["accuracy", "ap"],
+        default="accuracy",
+        help=(
+            "Sprint checkpoint metric. Legacy default accuracy preserves "
+            "old protocol; AP is recommended for the paired mechanism study."
         ),
     )
     parser.add_argument(
