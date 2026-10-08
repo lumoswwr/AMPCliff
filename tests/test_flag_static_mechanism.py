@@ -24,6 +24,13 @@ def test_identity_at_epoch0():
         assert torch.allclose(got, expected, atol=1e-6, rtol=1e-6), mode
 
 
+def test_random_projection_initialization():
+    torch.manual_seed(111)
+    p = StaticFLaGMechanismPooling(32, "mean_project_random")
+    ident = torch.eye(32)
+    assert not torch.allclose(p.time_out_proj.weight, ident, atol=1e-4)
+
+
 def test_static_reim_exact_fft_equivalence_and_gradients():
     torch.manual_seed(5)
     n, d = 29, 16
@@ -63,6 +70,7 @@ def test_static_diag_equals_equal_reim():
 
 if __name__=="__main__":
     test_identity_at_epoch0()
+    test_random_projection_initialization()
     test_static_reim_exact_fft_equivalence_and_gradients()
     test_static_diag_equals_equal_reim()
-    print("PASS: 3 static-FLaG controls (identity, FFT equivalence, gradients)")
+    print("PASS: 4 static-FLaG controls (identity, FFT equivalence, gradients)")
