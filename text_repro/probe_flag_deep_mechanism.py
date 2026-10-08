@@ -51,6 +51,31 @@ class Streaming:
     """Stores only per-sentence diagnostics, never full hidden representations."""
     def __init__(self):
         self.values = defaultdict(list)
+        self.logits_sum = None
+        self.logits_sq = None
+        self.gate_sum = None
+        self.gate_sq = None
+        self.vector_count = 0
+
+    def add_channel_variance(self, logits, gate):
+        # Streaming [2D] statistics avoid materializing all example gates.
+        a = logits.detach().double()
+        g = gate.detach().double()
+        sums_a = a.sum(dim=0).cpu()
+        sums_sq_a = a.square().sum(dim=0).cpu()
+        sums_g = g.sum(dim=0).cpu()
+        sums_sq_g = g.square().sum(dim=0).cpu()
+        if self.logits_sum is None:
+            self.logits_sum = sums_a
+            self.logits_sq = sums_sq_a
+            self.gate_sum = sums_g
+            self.gate_sq = sums_sq_g
+        else:
+            self.logits_sum += sums_a
+            self.logits_sq += sums_sq_a
+            self.gate_sum += sums_g
+            self.gate_sq += sums_sq_g
+        self.vector_count += int(a.size(0))
 
     def add(self, key, x):
         self.values[key].extend(
@@ -67,6 +92,24 @@ class Streaming:
                 "p10": float(np.quantile(a, 0.1)),
                 "p90": float(np.quantile(a, 0.9)),
                 "n": int(len(a)),
+            }
+        if self.vector_count > 1:
+            n = self.vector_count
+            logits_var = (
+                self.logits_sq / n - (self.logits_sum / n).square()
+            ).clamp_min(0)
+            gate_var = (
+                self.gate_sq / n - (self.gate_sum / n).square()
+            ).clamp_min(0)
+            out["logits_between_sentence_channel_sd_mean"] = {
+                "mean": float(logits_var.sqrt().mean()),
+                "max": float(logits_var.sqrt().max()),
+                "n": n,
+            }
+            out["gate_between_sentence_channel_sd_mean"] = {
+                "mean": float(gate_var.sqrt().mean()),
+                "max": float(gate_var.sqrt().max()),
+                "n": n,
             }
         return out
 
@@ -134,7 +177,7 @@ def dataloader(dataset, task, tokenizer, args, n_samples, offset):
 
 
 @torch.no_grad()
-def get_gate(pool, hidden, mask):
+def get_gate(pool, hidden, mask, return_logits=False):
     spec = pool._to_frequency_tokens(hidden, mask)
     lat = pool._latent_pool_in_frequency(spec)
     hidden_gate = lat.mean(dim=1)
@@ -144,7 +187,7 @@ def get_gate(pool, hidden, mask):
         gate = 2.0 * raw
     else:
         gate = 1.0 + raw if pool.gate_residual else raw
-    return gate
+    return (gate, logits) if return_logits else gate
 
 
 def sequence_stats(hidden, mask):
@@ -188,7 +231,8 @@ def calibration(model, loader, device):
 
 @torch.no_grad()
 def get_outputs(pool, hidden, mask, train_gate, rec, check):
-    gate = get_gate(pool, hidden, mask)
+    gate, logits = get_gate(pool, hidden, mask, return_logits=True)
+    rec.add_channel_variance(logits, gate)
     if gate.shape[-1] != 2 * hidden.shape[-1]:
         raise RuntimeError("Unexpected gate width (must be 2*D)")
 
@@ -269,6 +313,15 @@ def get_outputs(pool, hidden, mask, train_gate, rec, check):
     rec.add("dc_weighted_gate_sd", (g2bar - gbar.square()).clamp_min(0).sqrt())
     rec.add("real_imag_gate_absolute_difference", (gr - gi).abs().mean(-1))
     rec.add("real_imag_gate_channel_cosine", F.cosine_similarity(gr, gi, dim=-1))
+    # Machine-precision diagnostics. Earlier result printing rounded values
+    # to five decimals, which is insufficient to claim exact gate invariance.
+    delta_gate = (gate - mean_gate).abs()
+    rec.add("dynamic_gate_max_abs_delta_vs_train_mean", delta_gate.amax(-1))
+    rec.add("dynamic_gate_bitwise_diff_fraction", (gate != mean_gate).float().mean(-1))
+    rec.add("dynamic_gate_fraction_above_1e-7", (delta_gate > 1e-7).float().mean(-1))
+    rec.add("dynamic_gate_fraction_above_1e-5", (delta_gate > 1e-5).float().mean(-1))
+    rec.add("gate_logits_within_sentence_channel_sd", logits.std(-1, unbiased=False))
+    rec.add("gate_logits_within_sentence_abs_mean", logits.abs().mean(-1))
     rec.add("dynamic_gate_abs_delta_vs_train_mean", (gate - mean_gate).abs().mean(-1))
     rec.add("dynamic_gate_l2_delta_vs_train_mean", (
         gate - mean_gate
@@ -425,6 +478,12 @@ def main():
         "lowest_5pct_real_gate_dc_energy_fraction",
         "real_imag_gate_absolute_difference",
         "dynamic_gate_abs_delta_vs_train_mean",
+        "dynamic_gate_max_abs_delta_vs_train_mean",
+        "dynamic_gate_bitwise_diff_fraction",
+        "dynamic_gate_fraction_above_1e-7",
+        "dynamic_gate_fraction_above_1e-5",
+        "logits_between_sentence_channel_sd_mean",
+        "gate_between_sentence_channel_sd_mean",
         "dynamic_gate_mask_flip_fraction_vs_train_mean",
         "native_to_no_pad_angle_deg",
         "native_to_long_pad_angle_deg",
