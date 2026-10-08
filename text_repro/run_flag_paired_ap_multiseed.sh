@@ -6,7 +6,7 @@ export PYTHONPATH="$(dirname "${REPO_ROOT}"):${PYTHONPATH:-}"
 
 SEEDS="${SEEDS:-0 1 2}"
 TASKS="${TASKS:-sprint stsb}"
-METHODS="${METHODS:-FLaG FLaG_B2 MeanProj_B2}"
+METHODS="${METHODS:-FLaG FLaG_B2 MeanProj_B2 MeanProjRand}"
 OUT="${OUT:-outputs/text/flag_paired_ap_multiseed}"
 FORCE="${FORCE:-0}"
 
@@ -23,6 +23,7 @@ for task in ${TASKS}; do
         FLaG) folder="flag" ;;
         FLaG_B2) folder="flag_b2" ;;
         MeanProj_B2) folder="mean_proj_b2" ;;
+        MeanProjRand) folder="mean_proj_rand" ;;
         StaticFLaG_ReIm_B2) folder="static_reim_b2" ;;
         StaticFLaG_Diag_B2) folder="static_diag_b2" ;;
         *) echo "Unrecognized method ${method}" >&2; exit 2 ;;
