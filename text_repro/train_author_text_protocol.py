@@ -1524,6 +1524,31 @@ def main():
             run_dir,
         )
 
+    # For the matched static FLaG controls, override generic FLaG flags
+    # written by task runners so metrics.json truthfully describes the model.
+    static_modes = {
+        "StaticFLaG_ReIm_B2": "static_reim",
+        "StaticFLaG_Diag_B2": "static_diag",
+        "MeanProj_B2": "mean_project",
+    }
+    if args.pooling in static_modes:
+        result.update({
+            "mechanism_family": "FFT-free trainable static FLaG control",
+            "static_gate_mode": static_modes[args.pooling],
+            "uses_fft": False,
+            "uses_latent_attention": False,
+            "gate_parameterization": (
+                "centered_sigmoid"
+                if args.pooling != "MeanProj_B2"
+                else "none"
+            ),
+            "identity_time_out_proj": True,
+            "zero_init_gate_output": (
+                args.pooling != "MeanProj_B2"
+            ),
+            "time_out_proj_init_scale": 1.0,
+        })
+
     maybe_add_beta(model, result)
     save_outputs(run_dir, result, history)
 
