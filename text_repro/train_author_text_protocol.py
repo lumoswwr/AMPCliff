@@ -1562,12 +1562,12 @@ def main():
             "uses_latent_attention": False,
             "gate_parameterization": (
                 "centered_sigmoid"
-                if args.pooling != "MeanProj_B2"
+                if args.pooling not in {"MeanProj_B2", "MeanProjRand"}
                 else "none"
             ),
             "identity_time_out_proj": (args.pooling != "MeanProjRand"),
             "zero_init_gate_output": (
-                args.pooling != "MeanProj_B2"
+                args.pooling not in {"MeanProj_B2", "MeanProjRand"}
             ),
             "time_out_proj_init_scale": (1.0 if args.pooling != "MeanProjRand" else None),
         })
