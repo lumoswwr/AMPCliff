@@ -62,9 +62,11 @@ STSB 仍是 3 epoch RoBERTa 端到端训练，Sprint 仍是
 
     outputs/text/flag_static_mechanism/static_mechanism_summary.md
 
-如果 seed0 与 B2 接近，再跑种子 1 2 3 4：
+如果 seed0 与 B2 接近，再跑种子 1 2 3 4。为了形成配对比较，
+同时重跑相同设置的 B2，不能只增加静态模型的种子：
 
     SEEDS="1 2 3 4" TASKS="stsb sprint" \
+      METHODS="FLaG_B2 StaticFLaG_ReIm_B2 StaticFLaG_Diag_B2 MeanProj_B2" \
       bash text_repro/run_flag_static_mechanism.sh 2>&1 | tee flag_static_4seed.log
 
 重新汇总全部 0..4 种子：
