@@ -13,6 +13,7 @@ METHOD_DIRS = {
     "FLaG": "flag",
     "FLaG_B2": "flag_b2",
     "MeanProj_B2": "mean_proj_b2",
+    "MeanProjRand": "mean_proj_rand",
     "StaticFLaG_ReIm_B2": "static_reim_b2",
     "StaticFLaG_Diag_B2": "static_diag_b2",
 }
@@ -99,6 +100,8 @@ def main():
                   "| --- | ---: | ---: | ---: | --- |"]
 
         compare = [
+            ("FLaG", "MeanProjRand"),
+            ("MeanProjRand", "MeanProj_B2"),
             ("FLaG", "MeanProj_B2"),
             ("FLaG_B2", "MeanProj_B2"),
             ("FLaG_B2", "StaticFLaG_ReIm_B2"),
