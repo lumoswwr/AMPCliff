@@ -23,6 +23,9 @@ from transformers import AutoModel, AutoTokenizer
 from AMPCliff.factory.pooling.flag_pooling import (
     FFTLatentAttentionGatePooling,
 )
+from AMPCliff.factory.pooling.static_flag_mechanism_pooling import (
+    StaticFLaGMechanismPooling,
+)
 
 
 # =========================================================
@@ -175,6 +178,22 @@ def build_pooling(
 ):
     if pooling == "mean":
         return MeanPooling()
+
+    static_modes = {
+        "StaticFLaG_ReIm_B2": "static_reim",
+        "StaticFLaG_Diag_B2": "static_diag",
+        "MeanProj_B2": "mean_project",
+    }
+    if pooling in static_modes:
+        if flag_time_pool != "mean" or flag_post_pool_norm:
+            raise ValueError(
+                "Matched static FLaG controls require --flag_time_pool mean "
+                "and --disable_post_pool_norm."
+            )
+        return StaticFLaGMechanismPooling(
+            d_model=d_model,
+            mode=static_modes[pooling],
+        )
 
     if pooling not in {
         "FLaG",
@@ -1370,6 +1389,9 @@ def main():
             "FLaG_B1",
             "FLaG_A1Z",
             "FLaG_B2",
+            "StaticFLaG_ReIm_B2",
+            "StaticFLaG_Diag_B2",
+            "MeanProj_B2",
             "FLaG_AlignmentAnchor",
         ],
         required=True,
@@ -1446,6 +1468,9 @@ def main():
         "FLaG_B1": "flag_b1",
         "FLaG_A1Z": "flag_zero",
         "FLaG_B2": "flag_b2",
+        "StaticFLaG_ReIm_B2": "static_reim_b2",
+        "StaticFLaG_Diag_B2": "static_diag_b2",
+        "MeanProj_B2": "mean_proj_b2",
         "FLaG_AlignmentAnchor": "alignment",
     }[args.pooling]
 
