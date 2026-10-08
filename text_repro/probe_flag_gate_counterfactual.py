@@ -240,7 +240,12 @@ def main():
         args.model_path, args.pooling, args.task == "sprint", .1,
         flag_time_pool="mean", flag_post_pool_norm=False,
     ).to(device)
-    model.load_state_dict(torch.load(checkpoint, map_location=device, weights_only=True))
+    try:
+        state_dict = torch.load(checkpoint, map_location=device, weights_only=True)
+    except TypeError:
+        # Support older PyTorch environments where weights_only is unavailable.
+        state_dict = torch.load(checkpoint, map_location=device)
+    model.load_state_dict(state_dict)
     model.eval()
 
     recorder = Collector()
