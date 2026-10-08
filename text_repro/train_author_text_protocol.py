@@ -183,6 +183,7 @@ def build_pooling(
         "StaticFLaG_ReIm_B2": "static_reim",
         "StaticFLaG_Diag_B2": "static_diag",
         "MeanProj_B2": "mean_project",
+        "MeanProjRand": "mean_project_random",
     }
     if pooling in static_modes:
         if flag_time_pool != "mean" or flag_post_pool_norm:
@@ -1402,6 +1403,7 @@ def main():
             "StaticFLaG_ReIm_B2",
             "StaticFLaG_Diag_B2",
             "MeanProj_B2",
+            "MeanProjRand",
             "FLaG_AlignmentAnchor",
         ],
         required=True,
@@ -1490,6 +1492,7 @@ def main():
         "StaticFLaG_ReIm_B2": "static_reim_b2",
         "StaticFLaG_Diag_B2": "static_diag_b2",
         "MeanProj_B2": "mean_proj_b2",
+        "MeanProjRand": "mean_proj_rand",
         "FLaG_AlignmentAnchor": "alignment",
     }[args.pooling]
 
@@ -1549,6 +1552,7 @@ def main():
         "StaticFLaG_ReIm_B2": "static_reim",
         "StaticFLaG_Diag_B2": "static_diag",
         "MeanProj_B2": "mean_project",
+        "MeanProjRand": "mean_project_random",
     }
     if args.pooling in static_modes:
         result.update({
@@ -1561,11 +1565,11 @@ def main():
                 if args.pooling != "MeanProj_B2"
                 else "none"
             ),
-            "identity_time_out_proj": True,
+            "identity_time_out_proj": (args.pooling != "MeanProjRand"),
             "zero_init_gate_output": (
                 args.pooling != "MeanProj_B2"
             ),
-            "time_out_proj_init_scale": 1.0,
+            "time_out_proj_init_scale": (1.0 if args.pooling != "MeanProjRand" else None),
         })
 
     maybe_add_beta(model, result)
