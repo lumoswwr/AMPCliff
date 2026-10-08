@@ -18,7 +18,7 @@ import torch.nn as nn
 class StaticFLaGMechanismPooling(nn.Module):
     def __init__(self, d_model: int, mode: str):
         super().__init__()
-        if mode not in {"static_reim", "static_diag", "mean_project"}:
+        if mode not in {"static_reim", "static_diag", "mean_project", "mean_project_random"}:
             raise ValueError(f"Unsupported static control {mode!r}")
         self.d_model = int(d_model)
         self.mode = mode
@@ -31,8 +31,9 @@ class StaticFLaGMechanismPooling(nn.Module):
             self.register_parameter("gate_logits", None)
 
         self.time_out_proj = nn.Linear(d_model, d_model)
-        nn.init.eye_(self.time_out_proj.weight)
-        nn.init.zeros_(self.time_out_proj.bias)
+        if mode != "mean_project_random":
+            nn.init.eye_(self.time_out_proj.weight)
+            nn.init.zeros_(self.time_out_proj.bias)
 
     def forward(self, features: torch.Tensor, attention_mask: torch.Tensor):
         if features.ndim != 3 or features.shape[-1] != self.d_model:
@@ -47,7 +48,7 @@ class StaticFLaGMechanismPooling(nn.Module):
         denom = mask.sum(dim=1).clamp_min(1e-6)
         mean = x.sum(dim=1) / denom
 
-        if self.mode == "mean_project":
+        if self.mode in {"mean_project", "mean_project_random"}:
             pooled = mean
         else:
             g = 2.0 * torch.sigmoid(self.gate_logits)
