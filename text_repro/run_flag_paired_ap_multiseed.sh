@@ -9,6 +9,7 @@ TASKS="${TASKS:-sprint stsb}"
 METHODS="${METHODS:-FLaG FLaG_B2 MeanProj_B2 MeanProjRand}"
 OUT="${OUT:-outputs/text/flag_paired_ap_multiseed}"
 FORCE="${FORCE:-0}"
+MATCHED_PROJECTION="${MATCHED_PROJECTION:-0}"
 
 python -m py_compile \
   text_repro/train_author_text_protocol.py \
@@ -33,6 +34,10 @@ for task in ${TASKS}; do
         echo "[skip] ${task} s${seed} ${method}: checkpoint and metrics exist"
         continue
       fi
+      extra_args=()
+      if [[ "${MATCHED_PROJECTION}" == "1" && ( "${method}" == "FLaG" || "${method}" == "MeanProjRand" ) ]]; then
+        extra_args=(--matched_output_proj_seed "$((30000 + seed))")
+      fi
       echo "================================================================================"
       echo "[paired] task=${task}, seed=${seed}, pooling=${method}"
       echo "[paired] selection: Sprint val AP / STSB val Spearman"
@@ -40,6 +45,7 @@ for task in ${TASKS}; do
         --task "${task}" --pooling "${method}" --seed "${seed}" \
         --flag_time_pool mean --disable_post_pool_norm \
         --sprint_selection_metric ap \
+        "${extra_args[@]}" \
         --output_dir "${OUT}"
     done
   done
