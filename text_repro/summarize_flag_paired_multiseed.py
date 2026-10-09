@@ -71,6 +71,26 @@ def main():
                 if value is not None:
                     by_seed[seed] = value
             records[method] = by_seed
+        # Verify random output projections are IDENTICAL, not merely drawn
+        # under the same model-level seed. Fail before reporting comparisons.
+        common = sorted(set(records["FLaG"]) & set(records["MeanProjRand"]))
+        for matched_seed in common:
+            left = records["FLaG"][matched_seed]
+            right = records["MeanProjRand"][matched_seed]
+            left_hash = left.get("initial_output_proj_sha256")
+            right_hash = right.get("initial_output_proj_sha256")
+            if left_hash is None and right_hash is None:
+                continue  # Legacy comparison, initializer matching not asserted.
+            if not left_hash or left_hash != right_hash:
+                raise RuntimeError(
+                    f"{task} seed{matched_seed}: mismatched initial output "
+                    f"projections (FLaG={left_hash}, MeanProjRand={right_hash})."
+                )
+            print(
+                f"[init-match] {task} seed{matched_seed}: "
+                f"projection sha256={left_hash[:16]} OK"
+            )
+
         existing = [method for method in METHOD_DIRS if records[method]]
         if not existing:
             continue
