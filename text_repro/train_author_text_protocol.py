@@ -370,6 +370,56 @@ class SentencePairModel(nn.Module):
         return score, cosine
 
 
+
+# =========================================================
+# Matched randomized output projection control
+# =========================================================
+
+def reset_projection_with_shared_seed(model, projection_seed):
+    """Reinitialize only the output linear layer, independent of model init order.
+
+    FLaG creates latent/gate parameters before its projection, whereas
+    MeanProjRand creates only a projection.  A common global seed is not
+    enough to match the resulting matrices.  Constructing a CPU nn.Linear
+    inside a forked RNG makes both start from exactly the same W and b
+    without perturbing the subsequent training random stream.
+    """
+    import hashlib
+
+    pool = model.pool
+    if not hasattr(pool, "time_out_proj"):
+        raise ValueError("Expected a pool.time_out_proj linear layer.")
+    project = pool.time_out_proj
+    if not isinstance(project, nn.Linear) or project.in_features != project.out_features:
+        raise ValueError("Expected square nn.Linear output projection.")
+
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(int(projection_seed))
+        source = nn.Linear(
+            project.in_features,
+            project.out_features,
+            bias=(project.bias is not None),
+        )
+
+    with torch.no_grad():
+        project.weight.copy_(source.weight.to(device=project.weight.device, dtype=project.weight.dtype))
+        if project.bias is not None:
+            project.bias.copy_(source.bias.to(device=project.bias.device, dtype=project.bias.dtype))
+
+    weight_bytes = project.weight.detach().cpu().contiguous().numpy().tobytes()
+    bias_bytes = (
+        project.bias.detach().cpu().contiguous().numpy().tobytes()
+        if project.bias is not None else b""
+    )
+    fingerprint = hashlib.sha256(weight_bytes + bias_bytes).hexdigest()
+    model._initial_output_proj_sha256 = fingerprint
+    model._matched_output_proj_seed = int(projection_seed)
+    print(
+        f"[proj-init] shared seed={projection_seed} sha256={fingerprint}",
+        flush=True,
+    )
+
+
 # =========================================================
 # Evaluation
 # =========================================================
@@ -910,6 +960,16 @@ def run_stsb(args, device, tokenizer, run_dir):
         ),
     ).to(device)
 
+    if args.matched_output_proj_seed is not None:
+        if args.pooling not in {"FLaG", "MeanProjRand"}:
+            raise ValueError(
+                "--matched_output_proj_seed only applies to FLaG and MeanProjRand."
+            )
+        reset_projection_with_shared_seed(
+            model,
+            args.matched_output_proj_seed,
+        )
+
     optimizer = build_e2e_adam(
         model,
         model.encoder,
@@ -1078,6 +1138,15 @@ def run_stsb(args, device, tokenizer, run_dir):
             torch.exp(model.log_scale).detach().cpu()
         ),
         "bias": float(model.bias.detach().cpu()),
+        "matched_output_proj_seed": (
+            int(args.matched_output_proj_seed)
+            if args.matched_output_proj_seed is not None else None
+        ),
+        "initial_output_proj_sha256": getattr(
+            model,
+            "_initial_output_proj_sha256",
+            None,
+        ),
         "stage_angle_audit": bool(
             args.stage_angle_audit
         ),
@@ -1141,6 +1210,16 @@ def run_sprint(args, device, tokenizer, run_dir):
             not args.disable_post_pool_norm
         ),
     ).to(device)
+
+    if args.matched_output_proj_seed is not None:
+        if args.pooling not in {"FLaG", "MeanProjRand"}:
+            raise ValueError(
+                "--matched_output_proj_seed only applies to FLaG and MeanProjRand."
+            )
+        reset_projection_with_shared_seed(
+            model,
+            args.matched_output_proj_seed,
+        )
 
     trainable = [
         p for p in model.parameters()
@@ -1336,6 +1415,15 @@ def run_sprint(args, device, tokenizer, run_dir):
             torch.exp(model.log_scale).detach().cpu()
         ),
         "bias": float(model.bias.detach().cpu()),
+        "matched_output_proj_seed": (
+            int(args.matched_output_proj_seed)
+            if args.matched_output_proj_seed is not None else None
+        ),
+        "initial_output_proj_sha256": getattr(
+            model,
+            "_initial_output_proj_sha256",
+            None,
+        ),
         "stage_angle_audit": bool(
             args.stage_angle_audit
         ),
@@ -1427,6 +1515,13 @@ def main():
             "A1/A1Z initialization-control experiment so A1Z + mean "
             "can be exactly Mean at initialization."
         ),
+    )
+    parser.add_argument(
+        "--matched_output_proj_seed",
+        type=int,
+        default=None,
+        help="Force a reproducibly identical random W,b for matched "
+             "FLaG vs MeanProjRand controls.",
     )
     parser.add_argument(
         "--sprint_selection_metric",
