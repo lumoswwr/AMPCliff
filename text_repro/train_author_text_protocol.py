@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from datasets import concatenate_datasets, load_from_disk
 from scipy.stats import pearsonr, spearmanr
 from sklearn.metrics import (
@@ -182,9 +183,9 @@ def build_pooling(
     }:
         raise ValueError(f"Unsupported pooling: {pooling}")
 
-    # Defaults reproduce Kewei2023/Pooling-img-text. The optional time-pool,
-    # post-norm and initialization controls are used only by matched mechanism
-    # ablations; existing author-protocol runs remain unchanged by default.
+    # Defaults reproduce the author text protocol. The optional mean-pool,
+    # no-post-norm and exact Mean initialization controls are preserved for
+    # studying why a Mean-equivalent FLaG evolves during optimization.
     return FFTLatentAttentionGatePooling(
         d_model=d_model,
         num_latents=8,
