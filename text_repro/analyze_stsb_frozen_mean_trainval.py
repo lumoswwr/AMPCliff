@@ -29,11 +29,11 @@ from train_author_text_protocol import PairCollator, PairDataset
 from train_stsb_frozen_mean_start import build_frozen_b2
 
 
-def make_eval_loader(dataset, tokenizer):
+def make_eval_loader(dataset, tokenizer, batch_size):
     collator = PairCollator(tokenizer, max_length=128, label_dtype=torch.float32)
     return DataLoader(
         PairDataset(dataset, "stsb"),
-        batch_size=64, shuffle=False, collate_fn=collator, num_workers=0,
+        batch_size=batch_size, shuffle=False, collate_fn=collator, num_workers=0,
     )
 
 
@@ -228,11 +228,11 @@ def main():
     print(f"device={device}, seed={args.seed}", flush=True)
     print("Evaluating all 5749 STSB TRAIN pairs...", flush=True)
     _, train_pairs = evaluate(
-        model, make_eval_loader(train, tokenizer), "stsb", device,
+        model, make_eval_loader(train, tokenizer, batch_size=32), "stsb", device,
     )
     print("Evaluating all 1500 STSB VALIDATION pairs...", flush=True)
     _, val_pairs = evaluate(
-        model, make_eval_loader(val, tokenizer), "stsb", device,
+        model, make_eval_loader(val, tokenizer, batch_size=64), "stsb", device,
     )
 
     # Regression check: the reloaded LAST B2 model must match the previous
@@ -281,6 +281,9 @@ def main():
         "test_used": False,
         "training_performed": False,
         "heads_fit_with": "Training set only (least squares, positive scale)",
+        "train_eval_batch_size": 32,
+        "validation_eval_batch_size": 64,
+        "batch_padding_note": "Deterministic no-shuffle eval, not stochastic minibatch training loss; B2 Fourier pooling may respond to dynamic batch padding.",
         "metrics": results,
     }
     output_path.write_text(
