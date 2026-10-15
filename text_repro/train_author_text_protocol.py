@@ -878,7 +878,7 @@ def run_sprint(args, device, tokenizer, run_dir):
         )
 
         if val["accuracy"] > best_score:
-            best_score = val[checkpoint_key]
+            best_score = val["accuracy"]
             best_epoch = epoch
             torch.save(model.state_dict(), best_path)
 
