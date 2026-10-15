@@ -22,7 +22,7 @@ Do not conflate experiment variants with original FLaG.
 | Backbone LR | 1e-5 | frozen | same | Yes |
 | Pool/head LR | 1e-3 | 1e-3 | same | Yes |
 | Weight decay / scheduler | 0 / null | 0 / null | 0 / none | Yes |
-| Loss | normalized target score/5 MSE | BCEWithLogits | same | Yes |
+| Loss | MSE; docs say target=score/5 | BCEWithLogits | MSE with score/5; BCEWithLogits | Objective types match; original label normalization needs unavailable data-loader code to independently verify |
 | Pair encoder/head | RoBERTa bi-encoder, L2 normalize, positive affine cosine | same as logit | same | Yes |
 | STSB model selection | validation Spearman | n/a | validation Spearman | Yes |
 | Sprint model selection | n/a | **validation accuracy** default | exploratory runs report AP; explicit checkpoint metric varies by script | **Not fully matched** |
@@ -82,6 +82,8 @@ data version remain to be verified against author artifacts.
 Local exploration concatenates locally stored train+validation then
 re-splits at each seed; compare dataset identity and indices before
 claiming *exact* matched splits.
+
+The shell grid scripts document eight poolings in some comments, while their default POOLINGS lists contain five entries; an explicit environment override can change the set. The claimed exact original run therefore also needs the resolved CLI/Hydra config, not just comments.
 
 The original training script records checkpoints based on validation
 Spearman for STSB and validation accuracy by default for Sprint; it
