@@ -224,8 +224,8 @@ def main():
     }
 
     root.mkdir(parents=True, exist_ok=True)
-    csv_path = root / "multiseed_0_4_comparison.csv"
-    json_path = root / "multiseed_0_4_summary.json"
+    csv_path = root / "multiseed_comparison.csv"
+    json_path = root / "multiseed_summary.json"
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
@@ -246,8 +246,9 @@ def main():
               f"{r['train_mse_delta_fit_head']:>+13.6f} "
               f"{r['val_mse_delta_fit_head']:>+12.6f}")
     s = summary["stats"]["final_val_spearman_delta"]
+    sd_text = f"{s['sample_std']:.6f}" if s["sample_std"] is not None else "N/A"
     print(f"\nFinal Spearman Δ (B2-Mean): {s['mean']:+.6f} ± "
-          f"{s['sample_std']:.6f} sample SD across {len(rows)} seeds")
+          f"{sd_text} sample SD across {len(rows)} seeds")
     print("Counts:", summary["counts"])
     print("Important: this is an exploratory SAME-validation comparison, "
           "not published test-set performance and not causal mechanism proof.")
