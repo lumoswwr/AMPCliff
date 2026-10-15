@@ -7,7 +7,6 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from datasets import concatenate_datasets, load_from_disk
 from scipy.stats import pearsonr, spearmanr
 from sklearn.metrics import (
@@ -22,9 +21,6 @@ from transformers import AutoModel, AutoTokenizer
 
 from AMPCliff.factory.pooling.flag_pooling import (
     FFTLatentAttentionGatePooling,
-)
-from AMPCliff.factory.pooling.static_flag_mechanism_pooling import (
-    StaticFLaGMechanismPooling,
 )
 
 
@@ -179,28 +175,8 @@ def build_pooling(
     if pooling == "mean":
         return MeanPooling()
 
-    static_modes = {
-        "StaticFLaG_ReIm_B2": "static_reim",
-        "StaticFLaG_Diag_B2": "static_diag",
-        "MeanProj_B2": "mean_project",
-        "MeanProjRand": "mean_project_random",
-    }
-    if pooling in static_modes:
-        if flag_time_pool != "mean" or flag_post_pool_norm:
-            raise ValueError(
-                "Matched static FLaG controls require --flag_time_pool mean "
-                "and --disable_post_pool_norm."
-            )
-        return StaticFLaGMechanismPooling(
-            d_model=d_model,
-            mode=static_modes[pooling],
-        )
-
     if pooling not in {
         "FLaG",
-        "FLaG_A1",
-        "FLaG_B1",
-        "FLaG_A1Z",
         "FLaG_B2",
         "FLaG_AlignmentAnchor",
     }:
@@ -233,20 +209,11 @@ def build_pooling(
         ),
         gate_parameterization=(
             "centered_sigmoid"
-            if pooling in {"FLaG_B1", "FLaG_A1Z", "FLaG_B2"}
+            if pooling == "FLaG_B2"
             else "residual_sigmoid"
         ),
-        identity_time_out_proj=(
-            pooling in {
-                "FLaG_A1",
-                "FLaG_B1",
-                "FLaG_A1Z",
-                "FLaG_B2",
-            }
-        ),
-        zero_init_gate_output=(
-            pooling in {"FLaG_A1Z", "FLaG_B2"}
-        ),
+        identity_time_out_proj=(pooling == "FLaG_B2"),
+        zero_init_gate_output=(pooling == "FLaG_B2"),
     )
 
 
@@ -372,55 +339,6 @@ class SentencePairModel(nn.Module):
 
 
 # =========================================================
-# Matched randomized output projection control
-# =========================================================
-
-def reset_projection_with_shared_seed(model, projection_seed):
-    """Reinitialize only the output linear layer, independent of model init order.
-
-    FLaG creates latent/gate parameters before its projection, whereas
-    MeanProjRand creates only a projection.  A common global seed is not
-    enough to match the resulting matrices.  Constructing a CPU nn.Linear
-    inside a forked RNG makes both start from exactly the same W and b
-    without perturbing the subsequent training random stream.
-    """
-    import hashlib
-
-    pool = model.pool
-    if not hasattr(pool, "time_out_proj"):
-        raise ValueError("Expected a pool.time_out_proj linear layer.")
-    project = pool.time_out_proj
-    if not isinstance(project, nn.Linear) or project.in_features != project.out_features:
-        raise ValueError("Expected square nn.Linear output projection.")
-
-    with torch.random.fork_rng(devices=[]):
-        torch.manual_seed(int(projection_seed))
-        source = nn.Linear(
-            project.in_features,
-            project.out_features,
-            bias=(project.bias is not None),
-        )
-
-    with torch.no_grad():
-        project.weight.copy_(source.weight.to(device=project.weight.device, dtype=project.weight.dtype))
-        if project.bias is not None:
-            project.bias.copy_(source.bias.to(device=project.bias.device, dtype=project.bias.dtype))
-
-    weight_bytes = project.weight.detach().cpu().contiguous().numpy().tobytes()
-    bias_bytes = (
-        project.bias.detach().cpu().contiguous().numpy().tobytes()
-        if project.bias is not None else b""
-    )
-    fingerprint = hashlib.sha256(weight_bytes + bias_bytes).hexdigest()
-    model._initial_output_proj_sha256 = fingerprint
-    model._matched_output_proj_seed = int(projection_seed)
-    print(
-        f"[proj-init] shared seed={projection_seed} sha256={fingerprint}",
-        flush=True,
-    )
-
-
-# =========================================================
 # Evaluation
 # =========================================================
 
@@ -512,207 +430,6 @@ def eval_sprint(model, loader, device):
         ),
     }
 
-
-
-# =========================================================
-# Stage-wise FLaG angle audit
-# =========================================================
-
-def _masked_mean_tensor(features, attention_mask, eps=1e-6):
-    mask = attention_mask.unsqueeze(-1).to(features.dtype)
-    summed = (features * mask).sum(dim=1)
-    denom = mask.sum(dim=1).clamp(min=eps)
-    return summed / denom
-
-
-def _angle_deg(a, b):
-    cosine = F.cosine_similarity(
-        a,
-        b,
-        dim=-1,
-        eps=1e-8,
-    ).clamp(-1.0, 1.0)
-    return torch.rad2deg(torch.acos(cosine))
-
-
-def _stage_angle_batch(pool, hidden, attention_mask):
-    required = [
-        "_last_freq_tokens",
-        "_last_enhanced_freq",
-        "_last_time_tokens",
-        "_last_pooled_pre_projection",
-        "_last_pooled_for_projection",
-        "_last_pooled_output",
-    ]
-    missing = [
-        name for name in required
-        if not hasattr(pool, name)
-    ]
-    if missing:
-        raise RuntimeError(
-            "Stage-angle audit requires FLaG stage tensors; "
-            f"missing {missing}"
-        )
-
-    d_model = hidden.size(-1)
-    mean_input = _masked_mean_tensor(
-        hidden,
-        attention_mask,
-    )
-
-    freq = pool._last_freq_tokens
-    enhanced = pool._last_enhanced_freq
-
-    # k=0 real coefficient is the spectral DC vector. The imaginary DC
-    # coefficient is zero for real-valued input and remains zero under the
-    # channel-wise gate, so comparing the real D-dimensional vectors is enough.
-    dc_before = freq[:, 0, :d_model]
-    dc_after = enhanced[:, 0, :d_model]
-
-    time_mean = _masked_mean_tensor(
-        pool._last_time_tokens,
-        attention_mask,
-    )
-    pooled_pre = pool._last_pooled_pre_projection
-    pooled_postnorm = pool._last_pooled_for_projection
-    pooled_final = pool._last_pooled_output
-
-    return {
-        # Sanity check for the theoretical Mean <-> DC relation.
-        "mean_to_dc_deg": _angle_deg(
-            mean_input,
-            dc_before,
-        ),
-        # Whole-spectrum change induced by the gate.
-        "spectral_gate_deg": _angle_deg(
-            freq.reshape(freq.size(0), -1),
-            enhanced.reshape(enhanced.size(0), -1),
-        ),
-        # The key channel-warping diagnostic on DC itself.
-        "dc_gate_deg": _angle_deg(
-            dc_before,
-            dc_after,
-        ),
-        # Cumulative deviation from raw masked Mean after iFFT + time mean.
-        "mean_to_time_mean_deg": _angle_deg(
-            mean_input,
-            time_mean,
-        ),
-        # Local change introduced by post-pool normalization.
-        "time_mean_to_postnorm_deg": _angle_deg(
-            pooled_pre,
-            pooled_postnorm,
-        ),
-        # Local change introduced by the trainable output projection.
-        "postnorm_to_projection_deg": _angle_deg(
-            pooled_postnorm,
-            pooled_final,
-        ),
-        # Final cumulative FLaG angle relative to raw Mean.
-        "mean_to_final_deg": _angle_deg(
-            mean_input,
-            pooled_final,
-        ),
-    }
-
-
-@torch.no_grad()
-def collect_stage_angles(model, loader, device):
-    if not isinstance(
-        model.pool,
-        FFTLatentAttentionGatePooling,
-    ):
-        raise ValueError(
-            "stage_angle_audit is only defined for FLaG variants"
-        )
-
-    model.eval()
-    sums = {}
-    sums_sq = {}
-    count = 0
-
-    for tok1, tok2, _labels in loader:
-        for tokens in (tok1, tok2):
-            tokens = {
-                k: v.to(device)
-                for k, v in tokens.items()
-            }
-
-            hidden = model.encoder(
-                **tokens
-            ).last_hidden_state
-
-            # Populate stage tensors on the pooling module.
-            _ = model.pool(
-                hidden,
-                attention_mask=tokens["attention_mask"],
-            )
-
-            batch_metrics = _stage_angle_batch(
-                model.pool,
-                hidden,
-                tokens["attention_mask"],
-            )
-
-            batch_n = hidden.size(0)
-            count += batch_n
-
-            for key, values in batch_metrics.items():
-                values = values.detach().float()
-                sums[key] = (
-                    sums.get(key, 0.0)
-                    + float(values.sum().cpu())
-                )
-                sums_sq[key] = (
-                    sums_sq.get(key, 0.0)
-                    + float((values * values).sum().cpu())
-                )
-
-    out = {
-        "n_sentences": int(count),
-    }
-
-    for key in sorted(sums):
-        mean = sums[key] / max(count, 1)
-        if count > 1:
-            var = (
-                sums_sq[key]
-                - (sums[key] * sums[key]) / count
-            ) / (count - 1)
-            var = max(var, 0.0)
-            std = var ** 0.5
-        else:
-            std = 0.0
-
-        out[key] = {
-            "mean": float(mean),
-            "std": float(std),
-        }
-
-    return out
-
-
-def print_stage_angle_snapshot(task, pooling, label, snapshot):
-    def m(key):
-        return snapshot[key]["mean"]
-
-    print(
-        f"[ANGLE][{task.upper()}][{pooling}][{label}] "
-        f"n={snapshot['n_sentences']} "
-        f"mean->DC={m('mean_to_dc_deg'):.3f}deg "
-        f"spec_gate={m('spectral_gate_deg'):.3f}deg "
-        f"DC_gate={m('dc_gate_deg'):.3f}deg "
-        f"mean->timeMean={m('mean_to_time_mean_deg'):.3f}deg "
-        f"timeMean->postNorm={m('time_mean_to_postnorm_deg'):.3f}deg "
-        f"postNorm->proj={m('postnorm_to_projection_deg'):.3f}deg "
-        f"mean->final={m('mean_to_final_deg'):.3f}deg",
-        flush=True,
-    )
-
-
-def save_stage_angle_audit(run_dir, audit):
-    with (run_dir / "stage_angles.json").open("w") as f:
-        json.dump(audit, f, indent=2)
 
 
 # =========================================================
@@ -881,34 +598,13 @@ def run_imdb(args, device, tokenizer, run_dir):
         ),
         "flag_time_pool": args.flag_time_pool,
         "gate_parameterization": (
-            "centered_sigmoid"
-            if args.pooling in {
-                "FLaG_B1",
-                "FLaG_A1Z",
-                "FLaG_B2",
-            }
+            "centered_sigmoid" if args.pooling == "FLaG_B2"
             else "residual_sigmoid"
         ),
-        "identity_time_out_proj": (
-            args.pooling in {
-                "FLaG_A1",
-                "FLaG_B1",
-                "FLaG_A1Z",
-                "FLaG_B2",
-            }
-        ),
-        "zero_init_gate_output": (
-            args.pooling in {"FLaG_A1Z", "FLaG_B2"}
-        ),
+        "identity_time_out_proj": (args.pooling == "FLaG_B2"),
+        "zero_init_gate_output": (args.pooling == "FLaG_B2"),
         "time_out_proj_init_scale": (
-            1.0
-            if args.pooling in {
-                "FLaG_A1",
-                "FLaG_B1",
-                "FLaG_A1Z",
-                "FLaG_B2",
-            }
-            else None
+            1.0 if args.pooling == "FLaG_B2" else None
         ),
         "split_seed": args.seed,
     }
@@ -960,16 +656,6 @@ def run_stsb(args, device, tokenizer, run_dir):
         ),
     ).to(device)
 
-    if args.matched_output_proj_seed is not None:
-        if args.pooling not in {"FLaG", "MeanProjRand"}:
-            raise ValueError(
-                "--matched_output_proj_seed only applies to FLaG and MeanProjRand."
-            )
-        reset_projection_with_shared_seed(
-            model,
-            args.matched_output_proj_seed,
-        )
-
     optimizer = build_e2e_adam(
         model,
         model.encoder,
@@ -981,21 +667,6 @@ def run_stsb(args, device, tokenizer, run_dir):
     best_epoch = None
     best_path = run_dir / "best_model.pt"
     history = []
-    angle_audit = {}
-
-    if args.stage_angle_audit:
-        angle_audit["epoch0"] = collect_stage_angles(
-            model,
-            val_loader,
-            device,
-        )
-        print_stage_angle_snapshot(
-            "stsb",
-            args.pooling,
-            "epoch0",
-            angle_audit["epoch0"],
-        )
-
     for epoch in range(1, 4):
         model.train()
         total_loss = 0.0
@@ -1037,19 +708,6 @@ def run_stsb(args, device, tokenizer, run_dir):
             flush=True,
         )
 
-        if args.stage_angle_audit and epoch == 1:
-            angle_audit["epoch1"] = collect_stage_angles(
-                model,
-                val_loader,
-                device,
-            )
-            print_stage_angle_snapshot(
-                "stsb",
-                args.pooling,
-                "epoch1",
-                angle_audit["epoch1"],
-            )
-
         if val["spearman"] > best_score:
             best_score = val["spearman"]
             best_epoch = epoch
@@ -1060,24 +718,6 @@ def run_stsb(args, device, tokenizer, run_dir):
     )
     val = eval_stsb(model, val_loader, device)
     test = eval_stsb(model, test_loader, device)
-
-    if args.stage_angle_audit:
-        angle_audit["best"] = collect_stage_angles(
-            model,
-            val_loader,
-            device,
-        )
-        angle_audit["best_epoch"] = int(best_epoch)
-        print_stage_angle_snapshot(
-            "stsb",
-            args.pooling,
-            f"best_e{best_epoch}",
-            angle_audit["best"],
-        )
-        save_stage_angle_audit(
-            run_dir,
-            angle_audit,
-        )
 
     result = {
         "task": "stsb",
@@ -1105,51 +745,18 @@ def run_stsb(args, device, tokenizer, run_dir):
         ),
         "flag_time_pool": args.flag_time_pool,
         "gate_parameterization": (
-            "centered_sigmoid"
-            if args.pooling in {
-                "FLaG_B1",
-                "FLaG_A1Z",
-                "FLaG_B2",
-            }
+            "centered_sigmoid" if args.pooling == "FLaG_B2"
             else "residual_sigmoid"
         ),
-        "identity_time_out_proj": (
-            args.pooling in {
-                "FLaG_A1",
-                "FLaG_B1",
-                "FLaG_A1Z",
-                "FLaG_B2",
-            }
-        ),
-        "zero_init_gate_output": (
-            args.pooling in {"FLaG_A1Z", "FLaG_B2"}
-        ),
+        "identity_time_out_proj": (args.pooling == "FLaG_B2"),
+        "zero_init_gate_output": (args.pooling == "FLaG_B2"),
         "time_out_proj_init_scale": (
-            1.0
-            if args.pooling in {
-                "FLaG_A1",
-                "FLaG_B1",
-                "FLaG_A1Z",
-                "FLaG_B2",
-            }
-            else None
+            1.0 if args.pooling == "FLaG_B2" else None
         ),
         "scale": float(
             torch.exp(model.log_scale).detach().cpu()
         ),
         "bias": float(model.bias.detach().cpu()),
-        "matched_output_proj_seed": (
-            int(args.matched_output_proj_seed)
-            if args.matched_output_proj_seed is not None else None
-        ),
-        "initial_output_proj_sha256": getattr(
-            model,
-            "_initial_output_proj_sha256",
-            None,
-        ),
-        "stage_angle_audit": bool(
-            args.stage_angle_audit
-        ),
     }
 
     return model, result, history
@@ -1211,16 +818,6 @@ def run_sprint(args, device, tokenizer, run_dir):
         ),
     ).to(device)
 
-    if args.matched_output_proj_seed is not None:
-        if args.pooling not in {"FLaG", "MeanProjRand"}:
-            raise ValueError(
-                "--matched_output_proj_seed only applies to FLaG and MeanProjRand."
-            )
-        reset_projection_with_shared_seed(
-            model,
-            args.matched_output_proj_seed,
-        )
-
     trainable = [
         p for p in model.parameters()
         if p.requires_grad
@@ -1236,21 +833,6 @@ def run_sprint(args, device, tokenizer, run_dir):
     best_epoch = None
     best_path = run_dir / "best_model.pt"
     history = []
-    angle_audit = {}
-
-    if args.stage_angle_audit:
-        angle_audit["epoch0"] = collect_stage_angles(
-            model,
-            val_loader,
-            device,
-        )
-        print_stage_angle_snapshot(
-            "sprint",
-            args.pooling,
-            "epoch0",
-            angle_audit["epoch0"],
-        )
-
     for epoch in range(1, 11):
         model.train()
         total_loss = 0.0
@@ -1294,25 +876,7 @@ def run_sprint(args, device, tokenizer, run_dir):
             flush=True,
         )
 
-        if args.stage_angle_audit and epoch == 1:
-            angle_audit["epoch1"] = collect_stage_angles(
-                model,
-                val_loader,
-                device,
-            )
-            print_stage_angle_snapshot(
-                "sprint",
-                args.pooling,
-                "epoch1",
-                angle_audit["epoch1"],
-            )
-
-        checkpoint_key = (
-            "average_precision"
-            if args.sprint_selection_metric == "ap"
-            else "accuracy"
-        )
-        if val[checkpoint_key] > best_score:
+        if val["accuracy"] > best_score:
             best_score = val[checkpoint_key]
             best_epoch = epoch
             torch.save(model.state_dict(), best_path)
@@ -1322,24 +886,6 @@ def run_sprint(args, device, tokenizer, run_dir):
     )
     val = eval_sprint(model, val_loader, device)
     test = eval_sprint(model, test_loader, device)
-
-    if args.stage_angle_audit:
-        angle_audit["best"] = collect_stage_angles(
-            model,
-            val_loader,
-            device,
-        )
-        angle_audit["best_epoch"] = int(best_epoch)
-        print_stage_angle_snapshot(
-            "sprint",
-            args.pooling,
-            f"best_e{best_epoch}",
-            angle_audit["best"],
-        )
-        save_stage_angle_audit(
-            run_dir,
-            angle_audit,
-        )
 
     result = {
         "task": "sprint",
@@ -1356,11 +902,7 @@ def run_sprint(args, device, tokenizer, run_dir):
         "test_precision": test["precision"],
         "test_recall": test["recall"],
         "epochs": 10,
-        "checkpoint_selection_metric": (
-            "val_average_precision"
-            if args.sprint_selection_metric == "ap"
-            else "val_accuracy"
-        ),
+        "checkpoint_selection_metric": "val_accuracy",
         "max_length": 128,
         "train_batch_size": 32,
         "eval_batch_size": 64,
@@ -1377,34 +919,13 @@ def run_sprint(args, device, tokenizer, run_dir):
         ),
         "flag_time_pool": args.flag_time_pool,
         "gate_parameterization": (
-            "centered_sigmoid"
-            if args.pooling in {
-                "FLaG_B1",
-                "FLaG_A1Z",
-                "FLaG_B2",
-            }
+            "centered_sigmoid" if args.pooling == "FLaG_B2"
             else "residual_sigmoid"
         ),
-        "identity_time_out_proj": (
-            args.pooling in {
-                "FLaG_A1",
-                "FLaG_B1",
-                "FLaG_A1Z",
-                "FLaG_B2",
-            }
-        ),
-        "zero_init_gate_output": (
-            args.pooling in {"FLaG_A1Z", "FLaG_B2"}
-        ),
+        "identity_time_out_proj": (args.pooling == "FLaG_B2"),
+        "zero_init_gate_output": (args.pooling == "FLaG_B2"),
         "time_out_proj_init_scale": (
-            1.0
-            if args.pooling in {
-                "FLaG_A1",
-                "FLaG_B1",
-                "FLaG_A1Z",
-                "FLaG_B2",
-            }
-            else None
+            1.0 if args.pooling == "FLaG_B2" else None
         ),
         "split_seed": args.seed,
         "sprint_split_source": (
@@ -1415,18 +936,6 @@ def run_sprint(args, device, tokenizer, run_dir):
             torch.exp(model.log_scale).detach().cpu()
         ),
         "bias": float(model.bias.detach().cpu()),
-        "matched_output_proj_seed": (
-            int(args.matched_output_proj_seed)
-            if args.matched_output_proj_seed is not None else None
-        ),
-        "initial_output_proj_sha256": getattr(
-            model,
-            "_initial_output_proj_sha256",
-            None,
-        ),
-        "stage_angle_audit": bool(
-            args.stage_angle_audit
-        ),
     }
 
     return model, result, history
@@ -1484,14 +993,7 @@ def main():
         choices=[
             "mean",
             "FLaG",
-            "FLaG_A1",
-            "FLaG_B1",
-            "FLaG_A1Z",
             "FLaG_B2",
-            "StaticFLaG_ReIm_B2",
-            "StaticFLaG_Diag_B2",
-            "MeanProj_B2",
-            "MeanProjRand",
             "FLaG_AlignmentAnchor",
         ],
         required=True,
@@ -1503,8 +1005,8 @@ def main():
         default="max",
         help=(
             "Final time-domain pooling used by FLaG/Alignment after iFFT. "
-            "Default max reproduces the author text protocol; mean is the "
-            "matched mechanism ablation."
+            "Default max reproduces the author text protocol; mean enables the "
+            "strict Mean-initialized FLaG control."
         ),
     )
     parser.add_argument(
@@ -1512,32 +1014,8 @@ def main():
         action="store_true",
         help=(
             "Disable the post-pooling LayerNorm. This is used by the "
-            "A1/A1Z initialization-control experiment so A1Z + mean "
+            "strict Mean-initialized FLaG experiment so B2 + mean "
             "can be exactly Mean at initialization."
-        ),
-    )
-    parser.add_argument(
-        "--matched_output_proj_seed",
-        type=int,
-        default=None,
-        help="Force a reproducibly identical random W,b for matched "
-             "FLaG vs MeanProjRand controls.",
-    )
-    parser.add_argument(
-        "--sprint_selection_metric",
-        choices=["accuracy", "ap"],
-        default="accuracy",
-        help=(
-            "Sprint checkpoint metric. Legacy default accuracy preserves "
-            "old protocol; AP is recommended for the paired mechanism study."
-        ),
-    )
-    parser.add_argument(
-        "--stage_angle_audit",
-        action="store_true",
-        help=(
-            "Record validation-set FLaG stage angles at epoch0, "
-            "after epoch1, and at the selected best checkpoint."
         ),
     )
     parser.add_argument(
@@ -1580,14 +1058,7 @@ def main():
     method_dir = {
         "mean": "mean",
         "FLaG": "flag",
-        "FLaG_A1": "flag_a1",
-        "FLaG_B1": "flag_b1",
-        "FLaG_A1Z": "flag_zero",
         "FLaG_B2": "flag_b2",
-        "StaticFLaG_ReIm_B2": "static_reim_b2",
-        "StaticFLaG_Diag_B2": "static_diag_b2",
-        "MeanProj_B2": "mean_proj_b2",
-        "MeanProjRand": "mean_proj_rand",
         "FLaG_AlignmentAnchor": "alignment",
     }[args.pooling]
 
@@ -1640,32 +1111,6 @@ def main():
             tokenizer,
             run_dir,
         )
-
-    # For the matched static FLaG controls, override generic FLaG flags
-    # written by task runners so metrics.json truthfully describes the model.
-    static_modes = {
-        "StaticFLaG_ReIm_B2": "static_reim",
-        "StaticFLaG_Diag_B2": "static_diag",
-        "MeanProj_B2": "mean_project",
-        "MeanProjRand": "mean_project_random",
-    }
-    if args.pooling in static_modes:
-        result.update({
-            "mechanism_family": "FFT-free trainable static FLaG control",
-            "static_gate_mode": static_modes[args.pooling],
-            "uses_fft": False,
-            "uses_latent_attention": False,
-            "gate_parameterization": (
-                "centered_sigmoid"
-                if args.pooling not in {"MeanProj_B2", "MeanProjRand"}
-                else "none"
-            ),
-            "identity_time_out_proj": (args.pooling != "MeanProjRand"),
-            "zero_init_gate_output": (
-                args.pooling not in {"MeanProj_B2", "MeanProjRand"}
-            ),
-            "time_out_proj_init_scale": (1.0 if args.pooling != "MeanProjRand" else None),
-        })
 
     maybe_add_beta(model, result)
     save_outputs(run_dir, result, history)
