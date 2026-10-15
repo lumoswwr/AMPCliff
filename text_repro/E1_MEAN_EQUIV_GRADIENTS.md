@@ -45,11 +45,14 @@ E1 is a gradient diagnosis, **not** proof of the final three-epoch degradation m
 Only after an interpretable seed-0 result, consider repeating seeds 1–4 using
 already-saved references, without retraining anything.
 
-Each run writes one JSON into a newly generated unique directory:
+A full run writes one JSON to a fixed, predictable path (no timestamp):
 
-    outputs/text/stsb_mean_equiv_e1_gradients/seed_0/run_YYYYMMDDTHHMMSSZ_RANDOM/e1_gradient_diagnostic.json
+    outputs/text/stsb_mean_equiv_e1_gradients/seed_0/e1_gradient_diagnostic.json
 
-The terminal prints its actual path after "Saved NEW result".
+The terminal prints its path after "Saved E1 JSON (fixed path)". If this
+file already exists, the script refuses to overwrite it. A smoke run writes
+no result and creates no E1 output directory. Historical timestamp-named E1
+runs from before the naming change are preserved (not deleted).
 
 ## Interpret cautiously
 
