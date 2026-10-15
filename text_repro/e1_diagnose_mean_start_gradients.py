@@ -15,12 +15,9 @@ text_repro (see text_repro/E1_MEAN_EQUIV_GRADIENTS.md).
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import json
 import math
-import os
 import statistics
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -237,13 +234,12 @@ def summarize_minibatches(sampled, full_grads, slices):
     return result
 
 
-def save_unique_result(root, seed, report):
-    seed_dir = root / f"seed_{seed}"
-    seed_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    out_dir = Path(tempfile.mkdtemp(prefix=f"run_{timestamp}_", dir=seed_dir))
-    output = out_dir / "e1_gradient_diagnostic.json"
-    # Exclusive creation is a second no-clobber safeguard.
+def save_named_result(root, seed, report):
+    # Exactly one fixed file per seed. Existing results must never be replaced.
+    output = root / f"seed_{seed}" / "e1_gradient_diagnostic.json"
+    if output.exists():
+        raise FileExistsError(f"E1 output exists; refusing to overwrite: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("x", encoding="utf-8") as file:
         json.dump(report, file, ensure_ascii=False, indent=2, allow_nan=False)
         file.write("\n")
@@ -272,6 +268,12 @@ def main():
     if args.train_limit < 0 or args.val_limit < 0:
         parser.error("limits must be nonnegative.")
     is_full = args.train_limit == 0 and args.val_limit == 0
+    fixed_output = (Path(args.output_root) / f"seed_{args.seed}"
+                    / "e1_gradient_diagnostic.json")
+    if is_full and fixed_output.exists():
+        raise FileExistsError(
+            f"E1 full-data output already exists: {fixed_output}. "
+            "No overwrites are allowed.")
 
     pilot = Path(args.pilot_dir) / f"seed_{args.seed}"
     summary_file = pilot / "summary.json"
@@ -419,7 +421,9 @@ def main():
             "estimate of a general population gradient covariance.",
         ],
     }
-    output = save_unique_result(Path(args.output_root), args.seed, report)
+    # Smoke runs are purely diagnostic and do not write any files.
+    output = (save_named_result(Path(args.output_root), args.seed, report)
+              if is_full else None)
 
     print("\nE1 initial-gradient summary (MSE):")
     print(f"  initial pool max difference:  {pool_max_diff:.3e}")
@@ -437,7 +441,10 @@ def main():
               f"{cosine if cosine is not None else float('nan'):>11.5f} "
               f"{noise if noise is not None else float('nan'):>15.3f}")
     print(f"  unchanged weights: {unchanged}")
-    print(f"\nSaved NEW result: {output}", flush=True)
+    if output is None:
+        print("\nSMOKE ONLY: no output file or folder created.", flush=True)
+    else:
+        print(f"\nSaved E1 JSON (fixed path): {output}", flush=True)
 
 
 if __name__ == "__main__":
