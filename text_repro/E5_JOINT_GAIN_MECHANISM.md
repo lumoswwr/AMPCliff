@@ -73,7 +73,7 @@ results are computed by read-only forwards at one joint Step10 state.
     git switch FLaG-STFT-mechanism
     git pull --ff-only
     conda activate flag
-    export PYTHONPATH="$(dirname "$PWD"):$PWD/text_repro:\${PYTHONPATH:-}"
+    export PYTHONPATH="$(dirname "$PWD"):$PWD/text_repro:${PYTHONPATH:-}"
 
     python -m py_compile text_repro/e5_joint_gain_mechanism.py
     python -u text_repro/e5_joint_gain_mechanism.py --check-only
