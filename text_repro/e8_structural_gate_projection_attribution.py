@@ -463,6 +463,7 @@ def replay_seed(args,seed,tokenizer,source,device,npz):
         raise RuntimeError("Expected full original STSB train+validation.")
 
     results={}
+    score_archive={}
     for split,y,cache,native,diag,stats in (
         ("train",ytr,cache_tr,native_tr,valid_tr,train_gate_stats),
         ("validation",yval,cache_va,native_va,valid_va,val_gate_stats)):
@@ -477,6 +478,10 @@ def replay_seed(args,seed,tokenizer,source,device,npz):
         result["algebraic_checks"]=diag
         result["gate_variation"]=stats
         results[split]=result
+        score_archive[f"{split}_labels"]=y
+        score_archive[f"{split}_scores"]=np.stack(
+            [scores[key] for key in KEYS],axis=0).astype(np.float32)
+    score_archive["variant_names"]=np.asarray(KEYS)
     sp=results["validation"]["Shapley_dynamic"]
     print(
         f"  seed{seed} full ΔSpearman={sp['total_delta_Spearman']:+.6f}; "
@@ -499,7 +504,7 @@ def replay_seed(args,seed,tokenizer,source,device,npz):
     del cache_tr,cache_va
     gc.collect()
     if device.type=="cuda":torch.cuda.empty_cache()
-    return output
+    return output,score_archive
 
 
 def summary(rows):
@@ -605,8 +610,10 @@ def main():
         self_test()
         return
     output=Path(args.output)
-    if output.exists() and not args.check_only:
-        raise FileExistsError(f"E8 will never overwrite {output}")
+    archive=output.with_suffix(".npz")
+    if (output.exists() or archive.exists()) and not args.check_only:
+        raise FileExistsError(
+            f"E8 never overwrites {output} or {archive}")
     sources=preflight(args)
     if not Path(args.e7_scores).is_file():
         raise FileNotFoundError(
@@ -627,10 +634,14 @@ def main():
         tokenizer=AutoTokenizer.from_pretrained(
             args.model_path,local_files_only=True)
         results={}
+        full_archive={}
         for seed in SEEDS:
             print(f"\n[E8] seed={seed}: exact E0 10 Adam updates",flush=True)
-            results[str(seed)]=replay_seed(
+            result,seed_archive=replay_seed(
                 args,seed,tokenizer,sources[seed],device,npz)
+            results[str(seed)]=result
+            for key,value in seed_archive.items():
+                full_archive[f"seed_{seed}_{key}"]=value
     report={
         "experiment":"E8_exact_algebra_structural_attribution_five_seeds",
         "scope":"STSB frozen RoBERTa B2, trained Mean equivalent, "
@@ -687,6 +698,8 @@ def main():
     }
     serial=json.dumps(report,indent=2,ensure_ascii=False,allow_nan=False)+"\n"
     output.parent.mkdir(parents=True,exist_ok=True)
+    with archive.open("xb") as f:
+        np.savez_compressed(f,**full_archive)
     with output.open("x",encoding="utf-8") as f:f.write(serial)
     print("\nE8 FIVE-SEED STRUCTURAL SUMMARY",flush=True)
     for key in (
@@ -702,7 +715,8 @@ def main():
     for f in FACTORS:
         s=report["summary"]["validation"][f"dynamic_shapley_{f}"]
         print(f"  Shapley {f}: {s['mean']:+.6f}",flush=True)
-    print(f"Saved one exclusive result: {output}",flush=True)
+    print(f"Saved exclusive E8 result: {output}",flush=True)
+    print(f"Saved 20-way per-pair score archive: {archive}",flush=True)
 
 
 if __name__=="__main__":
