@@ -105,65 +105,103 @@ def mse_terms(label, score):
 
 
 def pairwise_audit(labels, mean_score, candidate_score):
-    """Count corrected vs broken orders among pairs of STSB examples.
+    """Exact all-pairs order audit with bounded memory (blocks of 192).
 
-    A 'ranking comparison' here compares labels of TWO EXAMPLES, each
-    example itself being a sentence pair. Spearman is additionally
-    reported separately. Tied target labels excluded from flip counts.
+    Compare every pair of STSB examples exactly once, excluding tied labels.
+    This computes a Kendall-like order audit, NOT Spearman itself.
     """
     y=np.asarray(labels,dtype=np.float64)
     m=np.asarray(mean_score,dtype=np.float64)
     c=np.asarray(candidate_score,dtype=np.float64)
     n=len(y)
-    i,j=np.triu_indices(n,k=1)
-    delta_y=y[i]-y[j]
-    relevant=(delta_y!=0.)
-    # Filter before allocating downstream sign arrays.
-    deltas=np.abs(delta_y[relevant])
-    desired=np.sign(delta_y[relevant])
-    sm=np.sign(m[i[relevant]]-m[j[relevant]])
-    sc=np.sign(c[i[relevant]]-c[j[relevant]])
-    was_right=sm==desired
-    now_right=sc==desired
-    corrected=(~was_right)&now_right
-    broken=was_right&(~now_right)
-    both_wrong=(~was_right)&(~now_right)
-    both_right=was_right&now_right
-    # Ranking ties should be tracked explicitly, not silently equated
-    # with a correct strict ordering.
-    tie_m=(sm==0.)
-    tie_c=(sc==0.)
-    total=int(relevant.sum())
-    buckets={}
-    for lo,hi in zip(LABEL_GAPS[:-1],LABEL_GAPS[1:]):
-        idx=(deltas>lo)&(deltas<=hi)
-        cnt=int(idx.sum())
-        buckets[f"({lo:g},{min(hi,5.):g}]"]={
-            "n_comparisons":cnt,
-            "corrected_mean_wrong_to_right":int(corrected[idx].sum()),
-            "broken_mean_right_to_wrong":int(broken[idx].sum()),
-            "net_corrected_minus_broken":int(
-                corrected[idx].sum()-broken[idx].sum()),
-        }
+    size=192
+    count=0
+    equal_gold=0
+    before_correct=0
+    after_correct=0
+    corrected_count=0
+    broken_count=0
+    both_wrong_count=0
+    both_right_count=0
+    mean_tie_count=0
+    candidate_tie_count=0
+    buckets={
+        f"({lo:g},{min(hi,5.):g}]":{
+            "n_comparisons":0,
+            "corrected_mean_wrong_to_right":0,
+            "broken_mean_right_to_wrong":0,
+            "net_corrected_minus_broken":0,
+        } for lo,hi in zip(LABEL_GAPS[:-1],LABEL_GAPS[1:])
+    }
+    # Pair indices: block A over current rows, columns with strictly
+    # greater global index only. Memory O(block_size * n), not O(n^2).
+    for begin in range(0,n,size):
+        end=min(begin+size,n)
+        rows=np.arange(begin,end)
+        cols=np.arange(begin+1,n)
+        if len(cols)==0:
+            continue
+        dy=y[rows,None]-y[cols][None,:]
+        keep=(rows[:,None]<cols[None,:]) & (dy!=0.)
+        equal_gold+=int(
+            ((rows[:,None]<cols[None,:]) & (dy==0.)).sum())
+        if not keep.any():
+            continue
+        desired=np.sign(dy[keep])
+        dm=m[rows,None]-m[cols][None,:]
+        dc=c[rows,None]-c[cols][None,:]
+        sm=np.sign(dm[keep])
+        sc=np.sign(dc[keep])
+        was_right=sm==desired
+        now_right=sc==desired
+        corrected=(~was_right)&now_right
+        broken=was_right&(~now_right)
+        count+=int(keep.sum())
+        before_correct+=int(was_right.sum())
+        after_correct+=int(now_right.sum())
+        corrected_count+=int(corrected.sum())
+        broken_count+=int(broken.sum())
+        both_wrong_count+=int(((~was_right)&(~now_right)).sum())
+        both_right_count+=int((was_right&now_right).sum())
+        mean_tie_count+=int((sm==0.).sum())
+        candidate_tie_count+=int((sc==0.).sum())
+        distance=np.abs(dy[keep])
+        for lo,hi in zip(LABEL_GAPS[:-1],LABEL_GAPS[1:]):
+            key=f"({lo:g},{min(hi,5.):g}]"
+            idx=(distance>lo)&(distance<=hi)
+            sub=buckets[key]
+            sub["n_comparisons"]+=int(idx.sum())
+            sub["corrected_mean_wrong_to_right"]+=int(
+                corrected[idx].sum())
+            sub["broken_mean_right_to_wrong"]+=int(
+                broken[idx].sum())
+    if count+equal_gold != n*(n-1)//2:
+        raise RuntimeError("Blocked all-pairs comparison coverage incorrect.")
+    for row in buckets.values():
+        row["net_corrected_minus_broken"]=(
+            row["corrected_mean_wrong_to_right"]-
+            row["broken_mean_right_to_wrong"])
+    if sum(b["n_comparisons"] for b in buckets.values()) != count:
+        raise RuntimeError("Label gap bins must cover all comparisons.")
     rm=rankdata(m,method="average")
     rc=rankdata(c,method="average")
     return {
-        "n_examples":n,"n_comparable_pairs":total,
-        "excluded_equal_target_pairs":int((~relevant).sum()),
-        "mean_correct_order_fraction":float(was_right.mean()),
-        "candidate_correct_order_fraction":float(now_right.mean()),
-        "corrected_mean_wrong_to_right":int(corrected.sum()),
-        "broken_mean_right_to_wrong":int(broken.sum()),
-        "net_corrected_minus_broken":int(corrected.sum()-broken.sum()),
-        "remaining_both_wrong":int(both_wrong.sum()),
-        "remaining_both_right":int(both_right.sum()),
-        "mean_prediction_ties":int(tie_m.sum()),
-        "candidate_prediction_ties":int(tie_c.sum()),
+        "n_examples":n,"n_comparable_pairs":count,
+        "excluded_equal_target_pairs":equal_gold,
+        "mean_correct_order_fraction":before_correct/count,
+        "candidate_correct_order_fraction":after_correct/count,
+        "corrected_mean_wrong_to_right":corrected_count,
+        "broken_mean_right_to_wrong":broken_count,
+        "net_corrected_minus_broken":corrected_count-broken_count,
+        "remaining_both_wrong":both_wrong_count,
+        "remaining_both_right":both_right_count,
+        "mean_prediction_ties":mean_tie_count,
+        "candidate_prediction_ties":candidate_tie_count,
         "mean_abs_rank_displacement":float(np.mean(np.abs(rc-rm))),
         "number_examples_rank_changed":int(np.sum(rc!=rm)),
         "label_gap_strata":buckets,
-        "note":"Pairwise concordance is Kendall-like, not Spearman; "
-               "the latter is reported separately using scipy.",
+        "note":"Exact all-pairs concordance with bounded memory is "
+               "Kendall-like, not Spearman. Spearman is separately reported.",
     }
 
 
