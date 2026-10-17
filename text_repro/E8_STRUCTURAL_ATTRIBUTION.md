@@ -143,11 +143,14 @@ means MSE here remains susceptible to calibration.
     python -u text_repro/e8_structural_gate_projection_attribution.py --check-only
     python -u text_repro/e8_structural_gate_projection_attribution.py
 
-Expected exclusive output:
+Expected exclusive outputs:
 
     outputs/text/stsb_mean_equiv_e8_structural_causality/
         e8_five_seed_structural_attribution.json
+        e8_five_seed_structural_attribution.npz
 
+The NPZ stores all 20 variant scores and original labels for both splits
+and all five seeds, so later fine-grained rank audits will be CPU-only.
 No overwrite, checkpoints untouched. The program caches each split's
 Mean / reversal / a / b vectors temporarily, computes 20 variants
 using the GPU *without* repeating the RoBERTa forward for variants,
