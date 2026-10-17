@@ -74,7 +74,7 @@ def donor_indices(lengths, generator):
         group=np.flatnonzero(length_np==length)
         if len(group)<2:
             continue
-        shift=int(generator.integers(1,len(group)))
+        shift=int(torch.randint(1,len(group),(1,),generator=generator).item())
         result[group]=np.roll(group,shift)
         matched[group]=True
     if not np.all(length_np[result]==length_np):
