@@ -132,6 +132,30 @@ def lambdarank_loss(scores, labels):
     return torch.sum(weights * pair_loss) / weight_sum, count
 
 
+def self_test_loss_functions():
+    """Fail fast before any long run if a loss is non-finite or has no gradient."""
+    labels = torch.tensor([4.5, 4.5, 1.0, 0.0], dtype=torch.float32)
+    cases = {
+        "ranknet_raw": ranknet_loss,
+        "ranknet_scaled": ranknet_loss,
+        "pairwise_hinge": pairwise_hinge_loss,
+        "listnet": listnet_loss,
+        "listmle": listmle_loss,
+        "lambdarank": lambdarank_loss,
+    }
+    for name, fn in cases.items():
+        scores = torch.tensor([0.2, -0.1, 0.4, 0.0], dtype=torch.float32, requires_grad=True)
+        loss, weight = fn(scores, labels)
+        if not torch.isfinite(loss).item():
+            raise RuntimeError(f"Loss self-test failed: {name} returned non-finite loss")
+        if weight <= 0:
+            raise RuntimeError(f"Loss self-test failed: {name} returned zero effective weight")
+        loss.backward()
+        if scores.grad is None or not torch.isfinite(scores.grad).all().item():
+            raise RuntimeError(f"Loss self-test failed: {name} returned invalid gradients")
+    print("[loss self-test] all ranking losses returned finite loss and gradients", flush=True)
+
+
 def corr(fn, y, p):
     if len(y) < 2 or np.std(y) == 0 or np.std(p) == 0:
         return float("nan")
@@ -406,6 +430,7 @@ def main():
     args=ap.parse_args()
     root=Path(args.output_root);root.mkdir(parents=True,exist_ok=True)
     if args.summary_only: summarize(root);return
+    self_test_loss_functions()
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
     raw=load_from_disk(args.stsb_data_path)
     tokenizer=AutoTokenizer.from_pretrained(args.model_path,local_files_only=True)
