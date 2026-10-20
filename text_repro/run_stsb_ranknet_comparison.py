@@ -392,7 +392,7 @@ def summarize(root):
     lines += ["","## Paired differences","","Positive correlation delta is better; negative calibrated-MSE delta is better.","",
               "| Comparison | Metric | Mean delta | SD | Per-seed deltas |","|---|---|---:|---:|---|"]
     for r in deltas:
-        lines.append(f'| {r["comparison"]} | {r["metric"]} | {r["mean_delta"]:.6f} | {r["sd_delta"]:.6f} | \`{r["per_seed_deltas"]}\` |')
+        lines.append(f'| {r["comparison"]} | {r["metric"]} | {r["mean_delta"]:.6f} | {r["sd_delta"]:.6f} | {r["per_seed_deltas"]} |')
     (root/"summary.md").write_text("\n".join(lines)+"\n")
     print((root/"summary.md").read_text())
 
