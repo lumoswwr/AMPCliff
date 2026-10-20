@@ -5,8 +5,13 @@ Runs 3 architectures x 2 objectives x seeds 0..4. Outputs are stable and
 completed runs are never overwritten. Checkpoint selection uses validation
 Spearman; test metrics are computed only after selection.
 """
-import argparse, csv, gc, json, math, statistics
+import argparse, csv, gc, json, math, statistics, sys
 from pathlib import Path
+
+# Ensure imports such as `from AMPCliff.factory...` work when launched from
+# inside the repository checkout (e.g. `python text_repro/script.py`).
+# This adds the checkout's parent directory to sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import numpy as np
 import torch
