@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""STSB: compare standard MSE and RankNet pairwise loss for Mean, FLaG-Zero, FLaG.
+"""STSB: compare MSE and classic LTR losses for Mean, FLaG-Zero, FLaG.
 
-Runs 3 architectures x 2 objectives x seeds 0..4. Outputs are stable and
-completed runs are never overwritten. Checkpoint selection uses validation
-Spearman; test metrics are computed only after selection.
+Runs 3 architectures x 7 objectives x seeds 0..4. Existing completed runs are
+reused and never overwritten. Checkpoints use validation Spearman; test metrics
+are computed only after selection.
 """
 import argparse, csv, gc, json, math, statistics, sys
 from pathlib import Path
