@@ -12,6 +12,13 @@ import csv
 import json
 import math
 from pathlib import Path
+import sys
+
+# The training modules use absolute imports like `AMPCliff.factory...`.
+# When launched as `python text_repro/diagnose_stsb_pairwise_hinge.py`, Python
+# adds `text_repro` to sys.path, but not the parent of the AMPCliff package.
+# Add the checkout's parent BEFORE importing train_author_text_protocol.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import numpy as np
 import torch
