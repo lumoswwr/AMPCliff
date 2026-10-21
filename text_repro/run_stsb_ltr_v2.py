@@ -9,7 +9,7 @@ are computed only after selecting a checkpoint.
 This v2 isolates the training-budget change: it retains each v1 loss formula,
 including the historical ListMLE arbitrary ordering of tied labels. That issue
 is explicitly documented in STSB_LTR_V2_PROTOCOL.md and must not be concealed.
-""
+"""
 import argparse, csv, gc, json, math, statistics, sys
 from pathlib import Path
 
