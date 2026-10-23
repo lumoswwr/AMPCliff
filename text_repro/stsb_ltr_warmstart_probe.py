@@ -34,7 +34,7 @@ from run_stsb_ranknet_comparison import (
     check_flag_zero, evaluate, make_model,
 )
 
-VARIANTS = ("mse_continue", "hinge_only", "mse_hinge_all", "mse_hinge_gap", "mse_listnet")
+VARIANTS = ("mse_continue", "hinge_only", "mse_hinge_all", "mse_hinge_gap", "mse_hinge_margin01", "mse_hinge_labelmargin", "mse_listnet")
 MODELS = ("mean", "flag_zero")
 
 
@@ -48,6 +48,30 @@ def gap_hinge(scores, labels, min_gap):
         return scores.sum() * 0.0, 0, int(i.numel())
     signed = torch.sign(dy[valid]) * (scores[i[valid]] - scores[j[valid]])
     return F.relu(1.0 - signed).mean(), count, int(i.numel())
+
+
+def calibrated_hinge(scores, labels, margin_mode):
+    """Fixed 0.1 or label-distance/5 Hinge on non-tied pairs.
+
+    margin_mode='fixed01'      margin=0.1
+    margin_mode='label_margin' margin=abs(label_i-label_j)/5
+    Both variants retain exactly the v2 pair aggregation / sign convention.
+    """
+    i, j = torch.triu_indices(labels.numel(), labels.numel(), 1, device=labels.device)
+    dy = labels[i] - labels[j]
+    valid = dy.abs() > 1e-8
+    count = int(valid.sum().item())
+    if not count:
+        return scores.sum() * 0.0, 0, int(i.numel())
+    delta = dy[valid]
+    signed = torch.sign(delta) * (scores[i[valid]] - scores[j[valid]])
+    if margin_mode == "fixed01":
+        margin = torch.full_like(signed, 0.1)
+    elif margin_mode == "label_margin":
+        margin = delta.abs() / 5.0
+    else:
+        raise ValueError(f"unknown margin_mode: {margin_mode}")
+    return F.relu(margin - signed).mean(), count, int(i.numel())
 
 
 def listnet_kl(scores, labels):
@@ -73,7 +97,15 @@ def self_test():
     (a + listnet_kl(correct, labels)).backward()
     assert correct.grad is not None and torch.isfinite(correct.grad).all().item()
     assert abs(float(listnet_kl(labels / 5.0, labels).detach())) < 1e-5
-    print("[self-test] label-gap hinge and normalized-label ListNet KL PASS", flush=True)
+    for mode in ("fixed01", "label_margin"):
+        left, nleft, _ = calibrated_hinge(correct, labels, mode)
+        right, nright, _ = calibrated_hinge(reversed_, labels, mode)
+        assert nleft == nright == 6
+        assert torch.isfinite(left).item() and torch.isfinite(right).item()
+        assert float(left.detach()) < float(right.detach())
+        left.backward(retain_graph=True)
+        assert correct.grad is not None and torch.isfinite(correct.grad).all().item()
+    print("[self-test] gap Hinge, calibrated Hinge, and ListNet KL PASS", flush=True)
 
 
 def load_checkpoint(model, path, name):
@@ -177,6 +209,11 @@ def train_one(args, raw, tokenizer, seed, variant, device):
                 gap = args.min_label_gap if variant == "mse_hinge_gap" else 0.0
                 rank, effective, total_pairs = gap_hinge(pred, labels, gap)
                 loss = rank if variant == "hinge_only" else mse + args.rank_weight * rank
+            elif variant in {"mse_hinge_margin01", "mse_hinge_labelmargin"}:
+                margin_mode = ("fixed01" if variant == "mse_hinge_margin01"
+                               else "label_margin")
+                rank, effective, total_pairs = calibrated_hinge(pred, labels, margin_mode)
+                loss = mse + args.rank_weight * rank
             elif variant == "mse_listnet":
                 rank = listnet_kl(pred, labels)
                 effective, total_pairs = 0, 0
@@ -236,6 +273,9 @@ def train_one(args, raw, tokenizer, seed, variant, device):
         "best_val_spearman": best_val, "best_epoch": best_epoch,
         "epochs_ran": len(history) - 1, "rank_weight": args.rank_weight,
         "min_label_gap": (args.min_label_gap if variant == "mse_hinge_gap" else None),
+        "margin_mode": ("fixed01" if variant == "mse_hinge_margin01" else
+                        "label_margin" if variant == "mse_hinge_labelmargin" else
+                        "fixed1" if variant in {"hinge_only", "mse_hinge_all", "mse_hinge_gap"} else None),
         "encoder_lr": args.encoder_lr, "new_lr": args.new_lr,
         "start": load_report, "equivalence": init_check,
         "test_evaluated": False,
