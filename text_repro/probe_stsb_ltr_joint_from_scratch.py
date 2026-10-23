@@ -323,6 +323,19 @@ def main():
         for seed in args.seeds:
             train_one(args, raw, tokenizer, seed, variant, device)
 
+    print("\n[FINAL_VALIDATION_COMPARISON] Test is not evaluated.", flush=True)
+    for seed in args.seeds:
+        baseline_file = args.output_root / "mean" / "mse_scratch" / f"seed_{seed}" / "metrics.json"
+        baseline = (json.loads(baseline_file.read_text())["best_val_spearman"]
+                    if baseline_file.is_file() else None)
+        for variant in args.variants:
+            metrics_file = args.output_root / "mean" / variant / f"seed_{seed}" / "metrics.json"
+            metrics = json.loads(metrics_file.read_text())
+            score = float(metrics["best_val_spearman"])
+            delta = f"{score-baseline:+.6f}" if baseline is not None else "NA"
+            print(f"seed={seed} variant={variant:<24} best_val_sp={score:.6f} "
+                  f"best_epoch={metrics['best_epoch']:02d} vs_mse={delta}", flush=True)
+
 
 if __name__ == "__main__":
     main()
