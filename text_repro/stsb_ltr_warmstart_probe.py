@@ -79,7 +79,11 @@ def self_test():
 def load_checkpoint(model, path, name):
     if not path.is_file():
         raise FileNotFoundError("Source Mean-MSE checkpoint missing: " + str(path))
-    state = torch.load(path, map_location="cpu", weights_only=True)
+    try:
+        state = torch.load(path, map_location="cpu", weights_only=True)
+    except TypeError:
+        # Older installed PyTorch versions lack the weights_only option.
+        state = torch.load(path, map_location="cpu")
     if not isinstance(state, dict):
         raise RuntimeError("Expected a raw state_dict at " + str(path))
     load = model.load_state_dict(state, strict=False)
