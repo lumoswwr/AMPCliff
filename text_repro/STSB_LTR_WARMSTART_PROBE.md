@@ -84,3 +84,38 @@ python -u text_repro/stsb_ltr_warmstart_probe.py --model mean --seeds 0 --varian
 - **MSE + ListNet KL 有效：** 值得单独研究概率分布尺度与温度。
 - **所有方法都未能改善：** 检查预训练任务、Pair/Batch 构造、评分头约束和梯度对齐，而不是再机械地增加 epoch 或 Loss 搜索数量。
 - **FLaG-Zero 弱于 Mean：** 继续检查新增 Gate/Projection 参数的训练更新；暂不能归因于“排序 Loss 本身无效”。
+
+## 梯度诊断结果（Mean-MSE，seed 0，两个 batch，每批 16 条）
+
+参考 `text_repro/diagnose_stsb_ltr_gradient_balance.py`，对同一次 forward 分别计算 MSE 和排序 Loss 的梯度（不更新参数，不访问 test）：
+
+| Margin 策略 | violation rate (batch0 / 1) | Encoder grad cos with MSE (batch0 / 1) | 0.05×排序梯度范数 / MSE 梯度范数 |
+| --- | --- | --- | --- |
+| fixed 1 | 1.000 / 1.000 | 0.5343 / 0.4943 | 0.3555 / 0.3036 |
+| fixed 0.1 | 0.209 / 0.229 | 0.3293 / 0.8196 | 0.0742 / 0.1097 |
+| abs(label gap)/5 | 0.617 / 0.644 | 0.8569 / 0.8868 | 0.2976 / 0.2713 |
+| fixed 1, label gap ≥0.5 | 1.000 / 1.000 | 0.5799 / 0.5610 | 0.4070 / 0.3637 |
+
+**判断边界：** 原始 margin=1 使所有观察到的有效 pair 都存在间隔违例，提示与强 Mean-MSE 预测尺度不匹配；但是 Encoder 梯度与 MSE 并非整体方向相反（余弦为正）。两个 batch 不代表总体，需要验证集实验支持。
+
+### 不覆盖旧数据的最小新实验
+
+两组新的命名变体已经加入 `stsb_ltr_warmstart_probe.py`，分别为：
+
+- `mse_hinge_margin01`：固定 margin=0.1，仍保留所有非同标签样本对。
+- `mse_hinge_labelmargin`：margin=abs(label_i-label_j)/5，与 MSE 的标签归一化尺度一致。
+
+两者都从**完全相同的高性能 Mean-MSE checkpoint** 出发，并使用相同的 MSE + 0.05×Hinge、训练轮次和学习率。原实验组和结果不改变。
+
+```bash
+cd ~/AMPCliff
+git pull origin FLaG-STFT-mechanism
+conda activate flag
+python -m py_compile text_repro/stsb_ltr_warmstart_probe.py
+python -u text_repro/stsb_ltr_warmstart_probe.py \
+  --model mean --seeds 0 \
+  --variants mse_hinge_margin01 mse_hinge_labelmargin \
+  2>&1 | tee stsb_ltr_margin_probe_s0.log
+```
+
+检查两个新变体的 `metrics.json` 和 `history.csv`。若改善，不要直接以单 seed 宣布超越 Mean-MSE，应在提前固定协议后继续做五种子验证；最终 test 仍仅做一次验证。若仍无改善，先考虑更小的排序 loss 权重或从原始训练起点联合训练，而不是继续机械增大 margin/epoch。
