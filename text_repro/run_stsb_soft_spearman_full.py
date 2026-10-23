@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gc
 import json
 import math
 import statistics
@@ -252,6 +253,10 @@ def train_one(args, raw, tokenizer, seed, variant, device):
         json.dumps(metrics, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print("RESULT " + json.dumps(metrics), flush=True)
+    del model, opt, loader, train_eval, val_eval
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 
@@ -356,8 +361,8 @@ def main():
     args = parser.parse_args()
     if args.epochs < 1 or args.min_epochs < 1 or args.min_epochs > args.epochs or args.patience < 1 or args.temperature <= 0:
         parser.error("Require epochs >= min_epochs >=1, patience >=1, temperature >0")
-    if not args.seeds or any(seed < 0 for seed in args.seeds):
-        parser.error("At least one nonnegative seed is required")
+    if not args.seeds or any(seed not in range(5) for seed in args.seeds):
+        parser.error("Formal protocol supports seed IDs 0–4 only")
     if args.output_root.resolve() == args.checkpoint_root.resolve() or args.checkpoint_root.resolve() in args.output_root.resolve().parents:
         parser.error("Output root must be outside source experiment root")
     if args.output_root.resolve() == Path("outputs/text/stsb_soft_spearman_v1_T005").resolve():
