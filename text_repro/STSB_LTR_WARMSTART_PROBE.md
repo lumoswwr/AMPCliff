@@ -26,6 +26,7 @@
 | 组名 | 训练目标 | 唯一改变 |
 | --- | --- | --- |
 | `mse_continue` | MSE | 继续训练的对照组 |
+| `hinge_only` | 纯 Hinge | 保留强 Mean-MSE 初始化，但去掉 MSE 约束，单独隔离 warm-start 影响 |
 | `mse_hinge_all` | MSE + 0.05 × Hinge | 对所有非并列标签样本对施加排序约束 |
 | `mse_hinge_gap` | MSE + 0.05 × Hinge | **仅对标签差值 ≥0.5 的 pair** 施加约束 |
 | `mse_listnet` | MSE + 0.05 × ListNet KL | 将标签统一缩放到 [0,1]，与预测评分尺度一致 |
@@ -55,18 +56,24 @@ python -m py_compile text_repro/stsb_ltr_warmstart_probe.py
 python -u text_repro/stsb_ltr_warmstart_probe.py --dry_run
 ```
 
-初次只跑 Mean、seed 0、四组：
+初次先跑 Mean、seed 0、四组（Hinge 主线）：
 
 ```bash
 python -u text_repro/stsb_ltr_warmstart_probe.py \
   --model mean --seeds 0 \
-  --variants mse_continue mse_hinge_all mse_hinge_gap mse_listnet \
+  --variants mse_continue hinge_only mse_hinge_all mse_hinge_gap \
   2>&1 | tee stsb_ltr_warmstart_probe_s0.log
 ```
 
 比较输出：`outputs/text/stsb_ltr_warmstart_probe_w005_gap05/mean/<variant>/seed_0/{history.csv,metrics.json,best_model.pt}`。
 
 优先判断哪些分支的 Validation Spearman 超过来自同一个 MSE checkpoint 的 epoch 0 和 `mse_continue`。**只选出明确改善验证集的损失，再扩大到 seeds 0–4 和 FLaG-Zero**。
+
+如果 Hinge 主线没有正向结果，再单独测试已保留的 ListNet：
+
+```bash
+python -u text_repro/stsb_ltr_warmstart_probe.py --model mean --seeds 0 --variants mse_listnet
+```
 
 注意：输出目录一旦存在有效文件，不会覆盖；改变 rank_weight、min_label_gap 或学习率时，请明确使用不同 `--output_root`，防止不同协议混在一起。
 
