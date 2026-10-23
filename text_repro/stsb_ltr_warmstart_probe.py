@@ -34,7 +34,7 @@ from run_stsb_ranknet_comparison import (
     check_flag_zero, evaluate, make_model,
 )
 
-VARIANTS = ("mse_continue", "mse_hinge_all", "mse_hinge_gap", "mse_listnet")
+VARIANTS = ("mse_continue", "hinge_only", "mse_hinge_all", "mse_hinge_gap", "mse_listnet")
 MODELS = ("mean", "flag_zero")
 
 
@@ -173,10 +173,10 @@ def train_one(args, raw, tokenizer, seed, variant, device):
                 rank = mse * 0.0
                 effective, total_pairs = 0, 0
                 loss = mse
-            elif variant in {"mse_hinge_all", "mse_hinge_gap"}:
-                gap = 0.0 if variant == "mse_hinge_all" else args.min_label_gap
+            elif variant in {"hinge_only", "mse_hinge_all", "mse_hinge_gap"}:
+                gap = args.min_label_gap if variant == "mse_hinge_gap" else 0.0
                 rank, effective, total_pairs = gap_hinge(pred, labels, gap)
-                loss = mse + args.rank_weight * rank
+                loss = rank if variant == "hinge_only" else mse + args.rank_weight * rank
             elif variant == "mse_listnet":
                 rank = listnet_kl(pred, labels)
                 effective, total_pairs = 0, 0
