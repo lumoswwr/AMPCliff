@@ -1,0 +1,24 @@
+{
+  "model": "mean",
+  "variant": "mse_softsp_w005",
+  "seed": 0,
+  "protocol": "softsp_3models_v1_val_only",
+  "initial_val_spearman": 0.6499867845498358,
+  "best_val_spearman": 0.8885845331504958,
+  "best_epoch": 7,
+  "epochs_ran": 12,
+  "rank_weight": 0.05,
+  "rank_temperature": 0.05,
+  "encoder_lr": 1e-05,
+  "new_lr": 0.001,
+  "max_epochs": 20,
+  "min_epochs": 12,
+  "patience": 5,
+  "start": {
+    "source": "roberta-base_pretrained_no_stsb_checkpoint"
+  },
+  "equivalence": {
+    "applicable": false
+  },
+  "notes": "Minibatch tie-aware soft Spearman surrogate; validation-only; not exact global Spearman."
+}
