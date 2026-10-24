@@ -38,6 +38,15 @@ def gib(number):
     return number / (1024 ** 3)
 
 
+def path_is_inside(path: Path, root: Path) -> bool:
+    """Compatible with Python 3.7/3.8 (Path.is_relative_to needs Python 3.9)."""
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def same_record(original: dict, exported: dict, model: str, loss: str, seed: int):
     for doc in (original, exported):
         if doc.get("model") != model or doc.get("loss") != loss or doc.get("seed") != seed:
@@ -66,7 +75,7 @@ def scan(repo_root: Path):
                     skipped.append((chk, "symlink or nonregular checkpoint/directory"))
                     continue
                 try:
-                    if not chk.resolve().is_relative_to(old_root.resolve()):
+                    if not path_is_inside(chk.resolve(), old_root.resolve()):
                         skipped.append((chk, "checkpoint escapes the approved old root"))
                         continue
                 except OSError:
@@ -126,7 +135,7 @@ def main():
           f"recoverable={gib(total):.2f} GiB")
     for path, size in eligible:
         print(f"  {'DELETE' if args.apply else 'WOULD DELETE'} "
-              f"{path.relative_to(repo) if path.is_relative_to(repo) else path} "
+              f"{path.relative_to(repo) if path_is_inside(path, repo) else path} "
               f"({gib(size):.3f} GiB)")
     for path, why in skipped:
         print(f"  SKIP {path}: {why}")
