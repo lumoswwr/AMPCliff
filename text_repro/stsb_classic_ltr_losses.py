@@ -130,8 +130,10 @@ def compute_ltr_loss(method, cosine, labels, temperature=0.05, label_temperature
 def self_test():
     """Fail fast: orientation, ties, finite losses, finite/nonzero gradients."""
     labels = torch.tensor([0.0, 0.0, 1.0, 3.0, 5.0], dtype=torch.float32)
-    good = torch.tensor([0.0, 0.0, 0.2, 0.6, 1.0], dtype=torch.float32)
-    reverse = torch.tensor([1.0, 1.0, 0.8, 0.4, 0.0], dtype=torch.float32)
+    # Moderately separated correct ordering: keeps hinge violations active,
+    # so every objective should have a nonzero gradient in this smoke test.
+    good = torch.tensor([0.0, 0.0, 0.01, 0.02, 0.03], dtype=torch.float32)
+    reverse = torch.tensor([0.03, 0.03, 0.02, 0.01, 0.0], dtype=torch.float32)
     for method in METHODS:
         pred = good.clone().requires_grad_(True)
         lg, selected, possible = compute_ltr_loss(method, pred, labels)
