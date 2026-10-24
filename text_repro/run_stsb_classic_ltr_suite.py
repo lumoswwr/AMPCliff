@@ -143,6 +143,23 @@ def run_one(args, raw, tokenizer, model_name, method, seed, device):
                 )
             # ONLY pure ranking loss is used for the backward/update.
             rank_loss.backward()
+            if epoch == 1 and seen == 0:
+                def has_finite_nonzero_gradient(params):
+                    present = [p.grad for p in params if p.requires_grad and p.grad is not None]
+                    if any(not torch.isfinite(g).all().item() for g in present):
+                        raise FloatingPointError("Nonfinite model parameter gradient")
+                    return any(g.detach().abs().max().item() > 0.0 for g in present)
+                encoder_ok = has_finite_nonzero_gradient(model.encoder.parameters())
+                pool_ok = has_finite_nonzero_gradient(model.pool.parameters())
+                if not encoder_ok or (
+                    any(p.requires_grad for p in model.pool.parameters()) and not pool_ok
+                ):
+                    raise RuntimeError(
+                        f"First-batch gradient disconnected for {model_name}/{method}/seed_{seed}: "
+                        f"encoder_ok={encoder_ok} pool_ok={pool_ok}"
+                    )
+                print(f"[gradient-sanity] {model_name}/{method}/seed_{seed} "
+                      f"encoder_has_grad={encoder_ok} pool_has_grad={pool_ok}", flush=True)
             opt.step()
             eligible_sum += eligible
             possible_sum += possible
