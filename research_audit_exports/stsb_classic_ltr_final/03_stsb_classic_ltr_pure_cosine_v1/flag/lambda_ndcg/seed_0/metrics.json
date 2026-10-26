@@ -1,0 +1,30 @@
+{
+  "protocol": "stsb_classic_ltr_fixed_temperature_v1_val_only",
+  "model": "flag",
+  "method": "lambda_ndcg",
+  "seed": 0,
+  "max_epochs": 20,
+  "min_epochs": 12,
+  "patience": 5,
+  "temperature": 0.05,
+  "label_temperature": 0.2,
+  "encoder_lr": 1e-05,
+  "pool_lr": 0.001,
+  "loss": "lambda_ndcg",
+  "score_source": "raw_cosine",
+  "mse_used_for_backward": false,
+  "affine_head_trainable": false,
+  "initial_val_spearman": 0.5636407515751564,
+  "best_val_spearman": 0.8599349261904841,
+  "best_epoch": 4,
+  "epochs_ran": 12,
+  "best_train_spearman": 0.937597209054246,
+  "train_calibrated_mse": 0.013556697426593458,
+  "train_calibration_scale": 1.0465188482148058,
+  "train_calibration_bias": -0.1033700459783008,
+  "mean_equivalence": {
+    "applicable": false
+  },
+  "checkpoint_selection": "official validation Spearman only",
+  "score_note": "all ranking objectives on raw cosine with fixed temperature; affine head frozen; train MSE calibrated only for diagnostics"
+}

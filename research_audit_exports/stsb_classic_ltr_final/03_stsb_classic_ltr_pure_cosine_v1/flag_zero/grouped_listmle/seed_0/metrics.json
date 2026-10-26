@@ -1,0 +1,32 @@
+{
+  "protocol": "stsb_classic_ltr_fixed_temperature_v1_val_only",
+  "model": "flag_zero",
+  "method": "grouped_listmle",
+  "seed": 0,
+  "max_epochs": 20,
+  "min_epochs": 12,
+  "patience": 5,
+  "temperature": 0.05,
+  "label_temperature": 0.2,
+  "encoder_lr": 1e-05,
+  "pool_lr": 0.001,
+  "loss": "grouped_listmle",
+  "score_source": "raw_cosine",
+  "mse_used_for_backward": false,
+  "affine_head_trainable": false,
+  "initial_val_spearman": 0.6499901922913583,
+  "best_val_spearman": 0.8718167226464664,
+  "best_epoch": 15,
+  "epochs_ran": 20,
+  "best_train_spearman": 0.963236910415418,
+  "train_calibrated_mse": 0.012874671647226622,
+  "train_calibration_scale": 1.0316464563086352,
+  "train_calibration_bias": -0.21328473732478948,
+  "mean_equivalence": {
+    "max_abs_pool_difference": 2.86102294921875e-06,
+    "max_abs_cosine_difference": 1.7881393432617188e-07,
+    "tolerance": 1e-05
+  },
+  "checkpoint_selection": "official validation Spearman only",
+  "score_note": "all ranking objectives on raw cosine with fixed temperature; affine head frozen; train MSE calibrated only for diagnostics"
+}

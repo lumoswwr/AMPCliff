@@ -1,0 +1,27 @@
+{
+  "protocol": "stsb_pure_softspearman_cosine_v1_val_only",
+  "model": "mean",
+  "seed": 0,
+  "max_epochs": 20,
+  "min_epochs": 12,
+  "patience": 5,
+  "temperature": 0.05,
+  "encoder_lr": 1e-05,
+  "pool_lr": 0.001,
+  "loss": "pure_soft_midrank_spearman_on_cosine",
+  "mse_used_for_backward": false,
+  "affine_head_trainable": false,
+  "initial_val_spearman": 0.6499867845498358,
+  "best_val_spearman": 0.8890373768793782,
+  "best_epoch": 7,
+  "epochs_ran": 12,
+  "best_train_spearman": 0.9730005587173309,
+  "train_calibrated_mse": 0.005888988747639925,
+  "train_calibration_scale": 1.7042793502154276,
+  "train_calibration_bias": -0.7725010909048613,
+  "mean_equivalence": {
+    "applicable": false
+  },
+  "checkpoint_selection": "official validation Spearman only",
+  "score_note": "affine head frozen; train MSE calibrated using train labels for diagnostics only"
+}
