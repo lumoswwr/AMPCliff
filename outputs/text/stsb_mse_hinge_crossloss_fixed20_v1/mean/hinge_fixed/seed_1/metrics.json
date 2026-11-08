@@ -1,0 +1,25 @@
+{
+  "protocol": "stsb_mse_hinge_crossloss_fixed20_noearlystop_v1",
+  "model": "mean",
+  "train_objective": "hinge_fixed",
+  "seed": 1,
+  "epochs_ran": 20,
+  "max_epochs": 20,
+  "no_early_stopping": true,
+  "temperature": 0.05,
+  "encoder_lr": 1e-05,
+  "pool_lr": 0.001,
+  "mse_uses_trainable_affine_head": false,
+  "best_val_spearman": 0.8925593935448348,
+  "best_epoch": 17,
+  "test_evaluated": false,
+  "initial_val_spearman": 0.6499867845498358,
+  "equivalence": {
+    "applicable": false
+  },
+  "diagnostic_mse": "mse(exp(log_scale)*cosine+bias, label/5)",
+  "diagnostic_hinge": "mean(relu(1-sign(delta_y)*delta_cosine/0.05)), ties omitted",
+  "mse_native_scaling_note": "MSE-training learns affine score; hinge-training freezes affine head at identity. A raw-cosine-MSE control is separately logged.",
+  "loss_record_timing": "train minibatches, pre-optimizer step",
+  "checkpoint_selection": "best validation Spearman, while training all 20 epochs"
+}
